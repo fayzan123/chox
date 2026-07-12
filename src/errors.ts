@@ -14,4 +14,3 @@ export class ChoxUsageError extends ChoxError {
     this.name = 'ChoxUsageError'
   }
 }
-

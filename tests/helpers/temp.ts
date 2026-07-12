@@ -26,4 +26,3 @@ export async function cleanupTempDirs(): Promise<void> {
   await Promise.all([...roots].map(async (root) => rm(root, { recursive: true, force: true })))
   roots.clear()
 }
-

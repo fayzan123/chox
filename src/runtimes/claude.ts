@@ -84,4 +84,3 @@ class ClaudeRuntime implements AgentRuntime {
 }
 
 export const claudeRuntime: AgentRuntime = new ClaudeRuntime()
-

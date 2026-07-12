@@ -21,4 +21,3 @@ export async function initGitRepo(root: string): Promise<string> {
   await git(repo, 'commit', '-m', 'initial')
   return repo
 }
-

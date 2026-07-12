@@ -22,4 +22,3 @@ behaviors, edge cases, and verification commands. The manifest must be valid JSO
 Use forward-slash, repository-relative paths. Also write non-empty challenge notes
 that identify any assumptions or intentional departures, or explicitly say there
 were none.
-

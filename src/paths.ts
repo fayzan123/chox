@@ -38,4 +38,3 @@ export async function ensureChoxHome(paths: ChoxPaths): Promise<void> {
     )
   }
 }
-

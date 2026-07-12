@@ -9,4 +9,3 @@ export function slugify(input: string): string {
 export function isValidSlug(input: string): boolean {
   return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(input)
 }
-

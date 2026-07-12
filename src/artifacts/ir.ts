@@ -127,4 +127,3 @@ export function validateRelay(raw: unknown, ctx: { slug: string }): Relay {
     gates: gates as Relay['gates']
   }
 }
-

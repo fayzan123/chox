@@ -28,4 +28,3 @@ export function redact(text: string, opts: { homeDir: string }): string {
   }
   return result
 }
-

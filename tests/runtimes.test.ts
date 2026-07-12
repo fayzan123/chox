@@ -1,0 +1,100 @@
+import { mkdir, readFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { Readable } from 'node:stream'
+
+import { afterEach, describe, expect, test } from 'vitest'
+
+import { claudeRuntime } from '../src/runtimes/claude.js'
+import { codexRuntime } from '../src/runtimes/codex.js'
+import type { AgentRuntime, RuntimeEvent } from '../src/runtimes/runtime.js'
+import { cleanupTempDirs, makeTempDir } from './helpers/temp.js'
+import { installFakeAgents, setFakeAgentScript } from './helpers/fake-agents.js'
+
+afterEach(cleanupTempDirs)
+
+async function collect(runtime: AgentRuntime, lines: string[]): Promise<RuntimeEvent[]> {
+  const stream = Readable.from(lines.map((line) => `${line}\n`))
+  const events: RuntimeEvent[] = []
+  for await (const event of runtime.normalizeEvents(stream)) events.push(event)
+  return events
+}
+
+describe.each([
+  ['claude', claudeRuntime],
+  ['codex', codexRuntime]
+] as const)('%s runtime', (name, runtime) => {
+  test('sends the prompt over stdin using an argv-array process', async () => {
+    const root = await makeTempDir()
+    const cwd = join(root, 'worktree with spaces')
+    await mkdir(cwd)
+    const fake = await installFakeAgents(root)
+    await setFakeAgentScript(fake.scriptPath, { stdout: [] })
+
+    const child = runtime.spawnHeadless('prompt with $HOME and "quotes"', { cwd, env: fake.env })
+    const exitCode = await new Promise<number | null>((resolve, reject) => {
+      child.once('error', reject)
+      child.once('close', resolve)
+    })
+
+    expect(exitCode).toBe(0)
+    expect(await readFile(fake.stdinPath, 'utf8')).toBe('prompt with $HOME and "quotes"')
+    const invocation = JSON.parse(await readFile(fake.argvPath, 'utf8')) as {
+      binary: string
+      args: string[]
+    }
+    expect(invocation.binary).toBe(name)
+    expect(invocation.args).not.toContain('prompt with $HOME and "quotes"')
+  })
+})
+
+test('Claude normalizes messages and commands while preserving garbage and truncation', async () => {
+  const events = await collect(claudeRuntime, [
+    JSON.stringify({
+      type: 'assistant',
+      message: { content: [
+        { type: 'text', text: 'working' },
+        { type: 'tool_use', name: 'Bash', input: { command: 'npm test' } }
+      ] }
+    }),
+    'not json',
+    '{"type":'
+  ])
+  expect(events).toEqual([
+    { kind: 'message', text: 'working' },
+    { kind: 'command', command: 'npm test' },
+    { kind: 'raw', line: 'not json' },
+    { kind: 'raw', line: '{"type":' }
+  ])
+})
+
+test('Codex normalizes item events and keeps unknown JSON as raw', async () => {
+  const command = JSON.stringify({
+    type: 'item.completed',
+    item: { type: 'command_execution', command: 'npm run build' }
+  })
+  const message = JSON.stringify({
+    type: 'item.completed',
+    item: { type: 'agent_message', text: 'done' }
+  })
+  const unknown = JSON.stringify({ type: 'future.event', value: 1 })
+  expect(await collect(codexRuntime, [command, message, unknown])).toEqual([
+    { kind: 'command', command: 'npm run build' },
+    { kind: 'message', text: 'done' },
+    { kind: 'raw', line: unknown }
+  ])
+})
+
+test('a missing runtime preflight is actionable and never exposes raw ENOENT', async () => {
+  const priorPath = process.env.PATH
+  const empty = await makeTempDir()
+  process.env.PATH = empty
+  try {
+    const probe = await claudeRuntime.preflight()
+    expect(probe.present).toBe(false)
+    expect(probe.problem).toMatch(/Claude Code.*install/i)
+    expect(probe.problem).not.toContain('ENOENT')
+  } finally {
+    process.env.PATH = priorPath
+  }
+})
+

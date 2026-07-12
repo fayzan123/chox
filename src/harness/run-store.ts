@@ -21,7 +21,7 @@ export interface RunState {
     deviations: Deviation[]
     blocking: boolean
     exitCode: number
-  }
+  } | undefined
   createdAt: string
   updatedAt: string
 }

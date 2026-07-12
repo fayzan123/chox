@@ -1,0 +1,10 @@
+# Review the implementation
+
+Review the worktree against {{artifact:spec.md}}, {{artifact:manifest.json}}, the
+implementation handoff at {{artifact:implementation.md}}, and the implementer's
+notes at {{artifact:challenge-notes.md}}.
+
+Check correctness, regressions, tests, security, and whether every deviation is
+justified. Do not rewrite the implementation in this hop. Write a prioritized review
+with file references and a clear ship/block recommendation to {{produces}}.
+

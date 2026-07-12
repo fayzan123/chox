@@ -88,6 +88,30 @@ entry includes the packet behavior to revert to if the PM prefers literal confor
   relays without ambient cwd state.
 - **Revert:** add `repoRoot` as a separate `compileRelay` argument instead.
 
+## 8. Execution plans are persisted per run
+
+- **Packet:** `run.json` is the resume source of truth, but it does not contain the
+  compiled plan. Reloading a hand-authored relay on resume can change hop indexes or
+  prompts after a user edits that relay.
+- **Implementation:** a new run stores its compiled `plan.json` beside `run.json`;
+  resume executes that immutable plan rather than the current relay definition.
+- **Why:** resume must continue the exact protocol and prompts the user originally
+  approved, and this also preserves the F13 dry-run/real-run relationship.
+- **Revert:** add the full plan to `run.json` itself, or declare relay definitions
+  immutable while a run is active.
+
+## 9. `doctor --bundle` is an explicit outside-home write
+
+- **Packet:** F10 says Phase 1a writes nothing outside `~/.chox/` except Git
+  mechanics, while §5.11 explicitly requires `doctor --bundle` to write
+  `chox-doctor-bundle.json` in cwd.
+- **Implementation:** the explicit `--bundle` action is treated as the narrow exception
+  to F10. No other Chox-owned file is written outside the selected Chox home and Git
+  worktree mechanics.
+- **Why:** cwd placement is the more specific user-facing contract and happens only
+  after the user requests the bundle.
+- **Revert:** store bundles beneath `~/.chox/` and print that location instead.
+
 ## Additional packet review findings (handled without contract deviations)
 
 - Relay template and artifact “filenames” are validated as basenames. Absolute paths,

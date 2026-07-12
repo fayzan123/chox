@@ -1,10 +1,10 @@
-import { appendFile, mkdir, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { afterEach, expect, test } from 'vitest'
 
 import type { CompiledHop } from '../src/artifacts/relay-compiler.js'
-import { presentGate, type GateIO } from '../src/harness/gates.js'
+import { createTerminalGateIO, presentGate, type GateIO } from '../src/harness/gates.js'
 import { cleanupTempDirs, makeTempDir } from './helpers/temp.js'
 
 afterEach(cleanupTempDirs)
@@ -103,4 +103,21 @@ test('redirect captures the user note for a runner retry', async () => {
     blocking: false,
     io
   })).resolves.toEqual({ action: 'redirect', note: 'Use the smaller API' })
+})
+
+test('the configured editor is spawned as an argv array and can edit a path with spaces', async () => {
+  const root = await makeTempDir()
+  const editor = join(root, 'fake editor.mjs')
+  const artifact = join(root, 'artifact with spaces.md')
+  await writeFile(editor, [
+    "import { appendFile } from 'node:fs/promises'",
+    "await appendFile(process.argv.at(-1), 'edited by fake editor\\n')"
+  ].join('\n'))
+  await writeFile(artifact, '# Original\n')
+  const io = createTerminalGateIO({
+    EDITOR: `"${process.execPath}" "${editor}"`
+  })
+
+  await io.openEditor(artifact)
+  expect(await readFile(artifact, 'utf8')).toContain('edited by fake editor')
 })

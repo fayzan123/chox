@@ -98,3 +98,29 @@ test('a missing runtime preflight is actionable and never exposes raw ENOENT', a
   }
 })
 
+test('a present binary whose version probe fails reports a repair action', async () => {
+  const root = await makeTempDir()
+  const fake = await installFakeAgents(root)
+  const prior = { ...process.env }
+  Object.assign(process.env, fake.env, { FAKE_VERSION_EXIT: '9' })
+  try {
+    const probe = await codexRuntime.preflight()
+    expect(probe).toMatchObject({ present: true })
+    expect(probe.problem).toMatch(/exited 9.*repair|repair.*exited 9/i)
+  } finally {
+    for (const key of Object.keys(process.env)) {
+      if (!(key in prior)) delete process.env[key]
+    }
+    Object.assign(process.env, prior)
+  }
+})
+
+test('production process launches never opt into shell command parsing', async () => {
+  const sources = await Promise.all([
+    readFile(new URL('../src/runtimes/runtime.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/runtimes/claude.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/runtimes/codex.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/harness/gates.ts', import.meta.url), 'utf8')
+  ])
+  expect(sources.join('\n')).not.toMatch(/shell:\s*true/)
+})

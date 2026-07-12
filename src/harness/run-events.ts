@@ -39,7 +39,7 @@ export function createEventWriter(eventsPath: string): RunEventWriter {
           }
         }
       }
-      const line = `${JSON.stringify({ ts: new Date().toISOString(), type, ...payload })}\n`
+      const line = `${JSON.stringify({ ...payload, ts: new Date().toISOString(), type })}\n`
       writeSync(fd, line)
       fsyncSync(fd)
     },

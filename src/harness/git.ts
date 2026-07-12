@@ -30,6 +30,7 @@ export function runCommand(
       }
       resolve(result)
     })
+    child.stdin?.end()
   })
 }
 
@@ -40,4 +41,3 @@ export function runGit(
 ): Promise<CommandResult> {
   return runCommand('git', args, { cwd, ...opts })
 }
-

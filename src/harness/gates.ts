@@ -110,13 +110,17 @@ function splitCommand(value: string): string[] {
   const parts: string[] = []
   let current = ''
   let quote: '"' | "'" | undefined
-  let escaping = false
-  for (const character of value.trim()) {
-    if (escaping) {
-      current += character
-      escaping = false
-    } else if (character === '\\' && quote !== "'") {
-      escaping = true
+  const input = value.trim()
+  for (let index = 0; index < input.length; index += 1) {
+    const character = input[index] as string
+    if (character === '\\' && quote !== "'") {
+      const next = input[index + 1]
+      if (next && (next === '\\' || next === quote || (!quote && /\s/.test(next)))) {
+        current += next
+        index += 1
+      } else {
+        current += character
+      }
     } else if (quote) {
       if (character === quote) quote = undefined
       else current += character

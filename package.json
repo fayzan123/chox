@@ -1,0 +1,25 @@
+{
+  "name": "chox",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Local-only, cross-agent session substrate: lenses over your coding-agent history, ending in installable artifacts",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "bin": {
+    "chox": "dist/bin/chox.js"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc --watch"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

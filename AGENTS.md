@@ -1,123 +1,75 @@
 # AGENTS.md
 
-Durable guidance for coding agents working in Chox. Keep this file compact and
-current. Put genuinely narrower rules in a nested `AGENTS.md`; do not duplicate this
-file elsewhere.
+Chox is a local-first TypeScript CLI for gated agent relays in isolated Git
+worktrees. This file contains repository-wide execution rules; product detail belongs
+in the canonical docs, not here.
 
-## Project Identity
+## Before Changing Code
 
-Chox is a local-first TypeScript CLI that runs gated, multi-runtime coding-agent
-relays inside isolated Git worktrees. The current implementation is Phase 1a: relay
-loading/compilation, Claude and Codex runtimes, the run harness, gates, resume,
-autonomy checks, worktree cleanup, and doctor diagnostics.
+1. Read the relevant code and tests.
+2. Use `docs/SPEC.md` for product intent and `docs/CORRECTNESS.md` as mandatory
+   correctness requirements.
+3. Follow the applicable `docs/plans/` packet for scope, interfaces, and acceptance
+   criteria. Record justified deviations in its challenge notes; do not rewrite
+   historical specs or packets to match code.
+4. Check `git status --short` and preserve unrelated work.
 
-Trust is a product requirement. Chox has no telemetry, accounts, direct network
-calls, or cloud service. Only a local agent CLI explicitly selected by the user may
-communicate with its vendor.
+## Non-Negotiables
 
-## Sources Of Truth
+- Node `>=22.13`, npm, strict TypeScript, ESM/NodeNext; single quotes, no semicolons,
+  and `.js` extensions on local imports.
+- No telemetry, accounts, Chox network calls, or unapproved dependencies. Only the
+  user-selected local agent CLI may contact its vendor.
+- Resolve Chox state through `src/paths.ts` and honor `CHOX_HOME`. Chox-owned writes
+  stay there except Git worktree mechanics and an explicitly requested cwd doctor
+  bundle.
+- Validate `unknown` data at JSON, filesystem, and process boundaries. Doctor bundles
+  never contain prompts, commands, or raw/dash-encoded home paths.
+- Spawn Git, editors, and agents with argv arrays and `shell: false`; send agent
+  prompts through stdin.
+- Dry-run and real execution use the same compiled plan and exact prompt text. Resume
+  uses the persisted plan.
+- Persist state before user-visible transitions. Report a hop started only after the
+  child emits `spawn`.
+- Never discard worktree changes: commit before removal and preserve run branches,
+  including orphan recovery.
+- `.chox-run/` is harness-owned artifact storage; exclude it from Git commits and
+  implementation footprints.
+- Stay inside the requested phase. Do not add future-phase stubs or infrastructure.
 
-Read these in order when product behavior is unclear:
+## Code Placement
 
-1. `docs/SPEC.md` — canonical product and architecture intent.
-2. `docs/CORRECTNESS.md` — non-negotiable correctness ledger.
-3. The applicable `docs/plans/` build packet — phase scope and acceptance criteria.
+- `bin/chox.ts`: thin CLI parsing and dispatch.
+- `src/artifacts/`: relay IR, validation, loading, and compilation.
+- `src/runtimes/`: runtime contract, process adapters, and event normalization.
+- `src/harness/`: orchestration, gates, autonomy, persistence, and isolation.
+- `src/system/`: reusable OS/process boundaries; no product policy.
+- Root `src/*.ts`: packet-defined shared APIs and diagnostics.
+- `.chox/relays/`: committed relay definitions.
+- `tests/`: mirrors production domains; shared setup only in `tests/helpers/`.
 
-Do not edit historical specs or build packets to make an implementation appear
-conformant. Record intentional packet deviations in the phase challenge notes.
+Put policy with its owning domain. Avoid generic `utils.ts`, broad barrel exports,
+and layering inversions. Keep packet-defined public interfaces stable; extract private
+modules when an implementation becomes difficult to navigate.
 
-## Commands
+## Testing
 
-Run commands from the repository root. The project uses npm, Node `>=22.13`, strict
-TypeScript, ESM, and NodeNext resolution. CI covers Ubuntu and Windows on Node 22/24.
+- Use Vitest, real temporary filesystems, and real temporary Git repositories. Never
+  mock `fs` for filesystem behavior.
+- Tests must never touch real `~/.chox`, `~/.claude`, or `~/.codex`.
+- Runtime/runner tests use `tests/helpers/fake-agents.ts`; never invoke installed agent
+  binaries. Gate tests inject `GateIO` and require no real TTY.
+- Test observable behavior through public interfaces. Mirror the source domain and use
+  `*.integration.test.ts` for process, Git, or CLI boundaries.
+- CI covers Ubuntu and Windows on Node 22/24; keep paths, argv handling, and timing
+  assertions portable.
+
+Run the narrowest relevant test first. Before broad handoff, run:
 
 ```sh
 npm run typecheck
 npm test
 npm run build
-
-# Focused examples
-npx vitest run tests/artifacts/relay.test.ts
-npx vitest run tests/harness/runner.integration.test.ts
-
-# Phase 1a smokes
 node dist/bin/chox.js run spec-implement-review --dry-run
-node dist/bin/chox.js doctor
+node dist/bin/chox.js doctor  # exit 0 or 1; never an uncaught exception
 ```
-
-## Repository Structure
-
-- `bin/chox.ts` — thin CLI parsing and dispatch. Product logic belongs in `src/`.
-- `src/artifacts/` — relay IR, validation, loading, and compilation.
-- `src/runtimes/` — agent runtime contract, registry, spawning, and event adapters.
-- `src/harness/` — run orchestration, gates, autonomy, state/events, and isolation.
-- `src/system/` — reusable OS/process boundaries; never place domain policy here.
-- `src/paths.ts`, `errors.ts`, `slugify.ts` — shared public foundations specified by
-  the phase packet.
-- `src/doctor.ts`, `redact.ts` — diagnostics and privacy boundary.
-- `.chox/relays/` — committed, hand-authored relay definitions.
-- `tests/` — mirrors production domains. Process/Git/CLI suites use
-  `*.integration.test.ts`; shared setup belongs only in `tests/helpers/`.
-
-When adding a module, place it with the domain that owns its policy. Avoid generic
-`utils.ts` files, broad barrels, and cross-domain imports that invert this layering.
-Keep public packet interfaces stable; extract private helpers behind them as modules
-grow.
-
-## Working Rules
-
-- Read relevant code and tests before editing. Use `rg` / `rg --files` for discovery.
-- Preserve unrelated user changes and check `git status --short` before broad edits.
-- Use single quotes, no semicolons, and `.js` extensions on local TypeScript imports.
-- Keep strict typing; do not bypass `unknown` validation with unchecked casts at file,
-  process, or JSON boundaries.
-- Do not add dependencies without explicit approval and a documented trust-budget
-  justification. Phase 1a has zero production dependencies.
-- Prefer small, coherent commits. Keep generated output out of source control.
-- Stay inside the requested phase. Do not stub detection, substrate, lenses, export,
-  scheduler, daemon, or app work ahead of its packet.
-
-## Safety Invariants
-
-- Resolve all Chox state through `src/paths.ts`; honor `CHOX_HOME` in every test and
-  path-sensitive flow.
-- Chox-owned writes stay under the selected Chox home. Exceptions are explicit Git
-  worktree mechanics and the user-requested cwd doctor bundle.
-- Never write unredacted prompts, commands, or raw user paths into doctor bundles.
-  Redact raw and dash-encoded home paths.
-- Spawn Git, editors, and agent CLIs with argv arrays and `shell: false`. Send agent
-  prompts through stdin, never argv.
-- Do not report an agent hop as started until the child process emits `spawn`.
-- Dry-run and real execution must use the same compiled plan and exact prompt text.
-- Gates remain resumable. Persist state before presenting user-visible transitions.
-- Never discard worktree changes. Commit dirty work before removal; orphan cleanup
-  follows the same path and preserves run branches.
-- Treat `.chox-run/` as harness-owned artifact storage, excluded from implementation
-  footprints and Git commits.
-
-## Testing Rules
-
-- Use Vitest and real temporary filesystems. Never mock `fs` for filesystem behavior.
-- Never touch real `~/.chox`, `~/.claude`, or `~/.codex` from tests. Use
-  `tests/helpers/temp.ts` and assert isolated paths.
-- Runtime and runner tests use fake binaries from `tests/helpers/fake-agents.ts`; they
-  must never spawn the installed Claude or Codex binaries.
-- Isolation tests create real temporary Git repositories through
-  `tests/helpers/git.ts`.
-- Gate tests inject scripted `GateIO`; never require a real TTY or editor.
-- Test observable behavior through public interfaces. Add focused tests beside the
-  matching domain and use an integration filename when the test crosses processes,
-  Git, or the CLI boundary.
-- Run the narrowest relevant suite first. Before handing off a broad change, run
-  typecheck, the full test suite, build, and relevant smokes.
-
-## Common Pitfalls
-
-- Probing agent binaries during `--dry-run`, which violates its no-process contract.
-- Reusing an earlier hop's `challenge-notes.md`; each challenge attempt must produce
-  fresh, non-empty notes.
-- Mutating the common repository exclude file instead of the linked worktree's
-  configured exclude.
-- Using current relay contents during resume instead of the persisted execution plan.
-- Treating advisory command visibility as a mechanical guarantee.
-- Adding flat tests at `tests/` when a matching domain directory exists.

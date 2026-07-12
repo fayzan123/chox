@@ -4,7 +4,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { ChoxError } from '../errors.js'
 import { ensureChoxHome, type ChoxPaths } from '../paths.js'
 import type { RunState } from './run-store.js'
-import { runGit } from './git.js'
+import { runGit } from '../system/command.js'
 
 export interface Worktree {
   path: string

@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto'
 
 import { ensureChoxHome, type ChoxPaths } from './paths.js'
 import { redact } from './redact.js'
-import { runCommand } from './harness/git.js'
+import { runCommand } from './system/command.js'
 
 export interface Probe {
   name: string

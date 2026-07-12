@@ -3,16 +3,16 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, test } from 'vitest'
 
-import type { CompiledHop, ExecutionPlan } from '../src/artifacts/relay-compiler.js'
-import { renderPlan } from '../src/artifacts/relay-compiler.js'
-import { RunInterruptedError, type GateIO } from '../src/harness/gates.js'
-import { executeRun } from '../src/harness/runner.js'
-import { findResumableRun, saveState } from '../src/harness/run-store.js'
-import { readEvents } from '../src/harness/run-events.js'
-import { resolvePaths } from '../src/paths.js'
-import { cleanupTempDirs, makeTempDir } from './helpers/temp.js'
-import { initGitRepo } from './helpers/git.js'
-import { installFakeAgents, setFakeAgentScript } from './helpers/fake-agents.js'
+import type { CompiledHop, ExecutionPlan } from '../../src/artifacts/relay-compiler.js'
+import { renderPlan } from '../../src/artifacts/relay-compiler.js'
+import { RunInterruptedError, type GateIO } from '../../src/harness/gates.js'
+import { executeRun } from '../../src/harness/runner.js'
+import { findResumableRun, saveState } from '../../src/harness/run-store.js'
+import { readEvents } from '../../src/harness/run-events.js'
+import { resolvePaths } from '../../src/paths.js'
+import { cleanupTempDirs, makeTempDir } from '../helpers/temp.js'
+import { initGitRepo } from '../helpers/git.js'
+import { installFakeAgents, setFakeAgentScript } from '../helpers/fake-agents.js'
 
 afterEach(cleanupTempDirs)
 

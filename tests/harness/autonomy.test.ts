@@ -3,15 +3,15 @@ import { join } from 'node:path'
 
 import { afterEach, expect, test } from 'vitest'
 
-import type { CompiledHop } from '../src/artifacts/relay-compiler.js'
+import type { CompiledHop } from '../../src/artifacts/relay-compiler.js'
 import {
   checkAutonomy,
   snapshotFootprint,
   type StrictManifest
-} from '../src/harness/autonomy.js'
-import { createEventWriter, readEvents } from '../src/harness/run-events.js'
-import { cleanupTempDirs, makeTempDir } from './helpers/temp.js'
-import { git, initGitRepo } from './helpers/git.js'
+} from '../../src/harness/autonomy.js'
+import { createEventWriter, readEvents } from '../../src/harness/run-events.js'
+import { cleanupTempDirs, makeTempDir } from '../helpers/temp.js'
+import { git, initGitRepo } from '../helpers/git.js'
 
 afterEach(cleanupTempDirs)
 

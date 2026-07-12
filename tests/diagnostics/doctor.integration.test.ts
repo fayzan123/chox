@@ -3,11 +3,11 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, test } from 'vitest'
 
-import { buildBundle, runDoctor, type Probe } from '../src/doctor.js'
-import { resolvePaths } from '../src/paths.js'
-import { redact } from '../src/redact.js'
-import { cleanupTempDirs, makeTempDir } from './helpers/temp.js'
-import { installFakeAgents } from './helpers/fake-agents.js'
+import { buildBundle, runDoctor, type Probe } from '../../src/doctor.js'
+import { resolvePaths } from '../../src/paths.js'
+import { redact } from '../../src/redact.js'
+import { cleanupTempDirs, makeTempDir } from '../helpers/temp.js'
+import { installFakeAgents } from '../helpers/fake-agents.js'
 
 afterEach(cleanupTempDirs)
 

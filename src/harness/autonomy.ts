@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import type { CompiledHop } from '../artifacts/relay-compiler.js'
 import { observedCommands, type RunEventWriter } from './run-events.js'
-import { runGit } from './git.js'
+import { runGit } from '../system/command.js'
 
 export interface Deviation {
   kind: 'out-of-manifest-file' | 'unlisted-command' | 'missing-challenge-notes' | 'missing-artifact'

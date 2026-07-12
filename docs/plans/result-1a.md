@@ -30,10 +30,10 @@ Claude, or Codex homes.
 
 1. `docs/plans/challenge-notes-1a.md` for the packet contradictions and intentional
    interface/on-disk clarifications.
-2. `tests/runner.test.ts` for prompt parity, gate/resume, redirect/edit, unattended,
-   failure, and challenge-repair acceptance coverage.
-3. `src/harness/isolation.ts` and `tests/isolation.test.ts` for the commit-before-remove
-   worktree safety path.
+2. `tests/harness/runner.integration.test.ts` for prompt parity, gate/resume,
+   redirect/edit, unattended, failure, and challenge-repair acceptance coverage.
+3. `src/harness/isolation.ts` and `tests/harness/isolation.integration.test.ts` for
+   the commit-before-remove worktree safety path.
 4. `src/doctor.ts`, `src/redact.ts`, and their tests for the diagnostics allowlist and
    dash-encoded home redaction.
 

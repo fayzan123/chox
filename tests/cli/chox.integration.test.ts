@@ -3,10 +3,10 @@ import { join } from 'node:path'
 
 import { afterEach, expect, test } from 'vitest'
 
-import { runCli, type CliContext } from '../bin/chox.js'
-import { cleanupTempDirs, makeTempDir } from './helpers/temp.js'
-import { initGitRepo } from './helpers/git.js'
-import { installFakeAgents } from './helpers/fake-agents.js'
+import { runCli, type CliContext } from '../../bin/chox.js'
+import { cleanupTempDirs, makeTempDir } from '../helpers/temp.js'
+import { initGitRepo } from '../helpers/git.js'
+import { installFakeAgents } from '../helpers/fake-agents.js'
 
 afterEach(cleanupTempDirs)
 

@@ -3,8 +3,8 @@ import { join } from 'node:path'
 
 import { afterEach, expect, test, vi } from 'vitest'
 
-import { createEventWriter, readEvents } from '../src/harness/run-events.js'
-import { cleanupTempDirs, makeTempDir } from './helpers/temp.js'
+import { createEventWriter, readEvents } from '../../src/harness/run-events.js'
+import { cleanupTempDirs, makeTempDir } from '../helpers/temp.js'
 
 afterEach(cleanupTempDirs)
 

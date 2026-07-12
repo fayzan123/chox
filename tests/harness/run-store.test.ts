@@ -3,14 +3,14 @@ import { join } from 'node:path'
 
 import { afterEach, expect, test, vi } from 'vitest'
 
-import { resolvePaths } from '../src/paths.js'
+import { resolvePaths } from '../../src/paths.js'
 import {
   createRun,
   findResumableRun,
   saveState,
   snapshotArtifacts
-} from '../src/harness/run-store.js'
-import { cleanupTempDirs, makeTempDir } from './helpers/temp.js'
+} from '../../src/harness/run-store.js'
+import { cleanupTempDirs, makeTempDir } from '../helpers/temp.js'
 
 afterEach(cleanupTempDirs)
 

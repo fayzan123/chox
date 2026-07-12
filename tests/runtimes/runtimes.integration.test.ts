@@ -4,11 +4,11 @@ import { Readable } from 'node:stream'
 
 import { afterEach, describe, expect, test } from 'vitest'
 
-import { claudeRuntime } from '../src/runtimes/claude.js'
-import { codexRuntime } from '../src/runtimes/codex.js'
-import type { AgentRuntime, RuntimeEvent } from '../src/runtimes/runtime.js'
-import { cleanupTempDirs, makeTempDir } from './helpers/temp.js'
-import { installFakeAgents, setFakeAgentScript } from './helpers/fake-agents.js'
+import { claudeRuntime } from '../../src/runtimes/claude.js'
+import { codexRuntime } from '../../src/runtimes/codex.js'
+import type { AgentRuntime, RuntimeEvent } from '../../src/runtimes/runtime.js'
+import { cleanupTempDirs, makeTempDir } from '../helpers/temp.js'
+import { installFakeAgents, setFakeAgentScript } from '../helpers/fake-agents.js'
 
 afterEach(cleanupTempDirs)
 
@@ -117,10 +117,10 @@ test('a present binary whose version probe fails reports a repair action', async
 
 test('production process launches never opt into shell command parsing', async () => {
   const sources = await Promise.all([
-    readFile(new URL('../src/runtimes/runtime.ts', import.meta.url), 'utf8'),
-    readFile(new URL('../src/runtimes/claude.ts', import.meta.url), 'utf8'),
-    readFile(new URL('../src/runtimes/codex.ts', import.meta.url), 'utf8'),
-    readFile(new URL('../src/harness/gates.ts', import.meta.url), 'utf8')
+    readFile(new URL('../../src/runtimes/runtime.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../../src/runtimes/claude.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../../src/runtimes/codex.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../../src/harness/gates.ts', import.meta.url), 'utf8')
   ])
   expect(sources.join('\n')).not.toMatch(/shell:\s*true/)
 })

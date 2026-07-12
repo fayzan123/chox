@@ -3,9 +3,9 @@ import { join } from 'node:path'
 
 import { afterEach, expect, test } from 'vitest'
 
-import type { CompiledHop } from '../src/artifacts/relay-compiler.js'
-import { createTerminalGateIO, presentGate, type GateIO } from '../src/harness/gates.js'
-import { cleanupTempDirs, makeTempDir } from './helpers/temp.js'
+import type { CompiledHop } from '../../src/artifacts/relay-compiler.js'
+import { createTerminalGateIO, presentGate, type GateIO } from '../../src/harness/gates.js'
+import { cleanupTempDirs, makeTempDir } from '../helpers/temp.js'
 
 afterEach(cleanupTempDirs)
 

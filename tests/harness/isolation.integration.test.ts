@@ -3,15 +3,15 @@ import { join } from 'node:path'
 
 import { afterEach, expect, test } from 'vitest'
 
-import { resolvePaths } from '../src/paths.js'
+import { resolvePaths } from '../../src/paths.js'
 import {
   createWorktree,
   sweepOrphans,
   teardownWorktree
-} from '../src/harness/isolation.js'
-import { createRun, saveState } from '../src/harness/run-store.js'
-import { cleanupTempDirs, makeTempDir } from './helpers/temp.js'
-import { git, initGitRepo } from './helpers/git.js'
+} from '../../src/harness/isolation.js'
+import { createRun, saveState } from '../../src/harness/run-store.js'
+import { cleanupTempDirs, makeTempDir } from '../helpers/temp.js'
+import { git, initGitRepo } from '../helpers/git.js'
 
 afterEach(cleanupTempDirs)
 

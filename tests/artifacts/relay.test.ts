@@ -3,12 +3,12 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, test } from 'vitest'
 
-import { compileRelay, renderPlan } from '../src/artifacts/relay-compiler.js'
-import { loadRelay } from '../src/artifacts/relay-loader.js'
-import { validateRelay } from '../src/artifacts/ir.js'
-import { resolvePaths } from '../src/paths.js'
-import { isValidSlug, slugify } from '../src/slugify.js'
-import { cleanupTempDirs, makeTempDir } from './helpers/temp.js'
+import { compileRelay, renderPlan } from '../../src/artifacts/relay-compiler.js'
+import { loadRelay } from '../../src/artifacts/relay-loader.js'
+import { validateRelay } from '../../src/artifacts/ir.js'
+import { resolvePaths } from '../../src/paths.js'
+import { isValidSlug, slugify } from '../../src/slugify.js'
+import { cleanupTempDirs, makeTempDir } from '../helpers/temp.js'
 
 afterEach(cleanupTempDirs)
 

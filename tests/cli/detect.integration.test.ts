@@ -133,14 +133,15 @@ async function detectionFixture() {
 
 test('detect JSON has stable fields, confirms a finding, and status reads substrate stats', async () => {
   const fixture = await detectionFixture()
+  fixture.output.ctx.env.ANTHROPIC_MODEL = 'sonnet'
   expect(await runCli(['detect', '--json', '--engine', 'claude'], fixture.output.ctx)).toBe(0)
   expect(fixture.output.stderr.join('')).toMatch(
-    /Confirmation engine: claude; model: CLI default; ceiling: 3 calls per finding/
+    /Confirmation engine: claude; model: sonnet; ceiling: 3 calls per finding/
   )
   const result = JSON.parse(fixture.output.stdout.join('')) as {
     schemaVersion: number
     scan: { totalSessions: number, sessionsBySource: Record<string, number> }
-    engine: { id: string, calls: number, usage: Record<string, number> }
+    engine: { id: string, model: string, calls: number, usage: Record<string, number> }
     findings: Array<{ id: string, state: string, chain: string[], evidence: unknown }>
     failures: unknown[]
   }
@@ -150,7 +151,10 @@ test('detect JSON has stable fields, confirms a finding, and status reads substr
     totalSessions: 3,
     sessionsBySource: { 'claude-code': 2, codex: 1 }
   })
-  expect(result.engine).toMatchObject({ id: 'claude', calls: 1, usage: { inputTokens: 100, outputTokens: 20 } })
+  expect(result.engine).toMatchObject({
+    id: 'claude', model: 'sonnet', calls: 1,
+    usage: { inputTokens: 100, outputTokens: 20 }
+  })
   expect(result.findings).toHaveLength(1)
   expect(result.findings[0]).toMatchObject({
     state: 'confirmed',

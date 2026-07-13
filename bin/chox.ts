@@ -345,6 +345,7 @@ async function detectCommand(args: string[], ctx: CliContext): Promise<number> {
     const failures: Array<{ candidateId: string, message: string }> = []
     let engineStats: EngineStats | undefined
     let engineId: string | undefined
+    let engineModel: string | undefined
     let missingEngine = false
     let engineAttempted = false
 
@@ -354,6 +355,7 @@ async function detectCommand(args: string[], ctx: CliContext): Promise<number> {
         missingEngine = true
       } else {
         engineId = engine.id
+        engineModel = engine.model
         engineAttempted = true
         const notice = `Confirmation engine: ${engine.id}; model: ${engine.model ?? 'CLI default'}; ceiling: 3 calls per finding.\n`
         if (flags.json) ctx.stderr(notice)
@@ -418,7 +420,12 @@ async function detectCommand(args: string[], ctx: CliContext): Promise<number> {
           diagnostics: Object.fromEntries(scan.map((result) => [result.sourceId, result.diagnostics]))
         },
         engine: engineId
-          ? { id: engineId, model: 'CLI default', calls: engineStats?.calls ?? 0, usage: engineStats?.usage ?? {} }
+          ? {
+              id: engineId,
+              model: engineModel ?? 'CLI default',
+              calls: engineStats?.calls ?? 0,
+              usage: engineStats?.usage ?? {}
+            }
           : null,
         findings: [
           ...findings.map((finding) => ({

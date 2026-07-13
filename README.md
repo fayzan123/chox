@@ -8,9 +8,9 @@ Chox is local-first, has no account, and has no server.
 - Chox itself makes no network calls. There is no telemetry or Chox service. When
   confirmation is enabled, Chox invokes one of your installed agent CLIs; that CLI
   may send derived evidence and short excerpts from only the highest-weighted
-  occurrence to its vendor. The chosen engine, model default, and call ceiling are
-  shown before analysis. Use `--no-confirm` to make detection fully deterministic
-  and spawn no engine.
+  occurrence to its vendor. The chosen engine, environment-selected model (or CLI
+  default), and call ceiling are shown before analysis. Use `--no-confirm` to make
+  detection fully deterministic and spawn no engine.
 - `~/.chox/substrate.db` stores session metadata, source-file references, and derived
   intent digests—not raw prompts or responses. Raw content remains in the original
   Claude Code and Codex session files and is read on demand for confirmation.
@@ -63,6 +63,7 @@ Useful variants:
 
 ```sh
 node dist/bin/chox.js detect --source claude-code,codex --since 30d
+ANTHROPIC_MODEL=sonnet node dist/bin/chox.js detect --engine claude
 node dist/bin/chox.js detect --engine codex --json
 node dist/bin/chox.js install --dismiss <finding-id>
 node dist/bin/chox.js run spec-implement-review --dry-run

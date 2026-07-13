@@ -33,6 +33,24 @@ describe('analysis engines', () => {
     expect(invocation.args).not.toContain('private prompt')
   })
 
+  test('Claude surfaces an environment-selected model and isolates analysis sessions', async () => {
+    const root = await makeTempDir()
+    const fake = await installFakeAgents(root)
+    await setFakeAgentScript(fake.scriptPath, {
+      stdout: [{ type: 'result', result: '{"confirmed":false}' }]
+    })
+    const engine = createClaudeEngine({ ...fake.env, ANTHROPIC_MODEL: 'sonnet' })
+
+    expect(engine.model).toBe('sonnet')
+    await engine.analyze('candidate')
+    const invocation = JSON.parse(await readFile(fake.argvPath, 'utf8')) as { args: string[] }
+    expect(invocation.args).toEqual([
+      '-p', '--output-format', 'stream-json', '--verbose',
+      '--safe-mode', '--no-session-persistence', '--model', 'sonnet',
+      '--tools', ''
+    ])
+  })
+
   test('Codex parses agent JSON and reports emitted usage', async () => {
     const root = await makeTempDir()
     const fake = await installFakeAgents(root)

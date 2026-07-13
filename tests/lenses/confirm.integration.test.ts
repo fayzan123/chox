@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, expect, test } from 'vitest'
 
 import { createClaudeEngine } from '../../src/engines/claude.js'
+import type { AnalysisEngine, EngineOpts, EngineStats } from '../../src/engines/engine.js'
 import { confirmHandoffCandidates } from '../../src/lenses/handoff/confirm.js'
 import type { Candidate } from '../../src/lenses/lens.js'
 import { resolvePaths } from '../../src/paths.js'
@@ -12,6 +13,32 @@ import { cleanupTempDirs, makeTempDir } from '../helpers/temp.js'
 import { installFakeAgents, setFakeAgentScript } from '../helpers/fake-agents.js'
 
 afterEach(cleanupTempDirs)
+
+class CapturingEngine implements AnalysisEngine {
+  readonly id = 'claude'
+  calls = 0
+  timeouts: Array<number | undefined> = []
+
+  async analyze(_prompt: string, opts: EngineOpts = {}): Promise<unknown> {
+    this.calls += 1
+    this.timeouts.push(opts.timeoutMs)
+    return {
+      confirmed: true,
+      reason: 'Repeated handoff',
+      relay: {
+        slug: 'plan-build',
+        hops: [
+          { runtime: 'claude', role: 'plan', autonomy: 'challenge', prompt: 'Plan.' },
+          { runtime: 'codex', role: 'implement', autonomy: 'challenge', prompt: 'Build.' }
+        ]
+      }
+    }
+  }
+
+  stats(): EngineStats {
+    return { calls: this.calls, usage: {} }
+  }
+}
 
 test('confirmation sends excerpts only from the highest-weighted occurrence', async () => {
   const root = await makeTempDir()
@@ -80,5 +107,31 @@ test('confirmation sends excerpts only from the highest-weighted occurrence', as
   expect(prompt).not.toContain(high)
   expect(prompt).not.toContain('/private/repo-name')
   expect(store.getFinding(candidate.id)).toMatchObject({ kind: 'relay', status: 'suggested' })
+  store.close()
+})
+
+test('confirmation allows more than 30 seconds while reserving the drafting budget', async () => {
+  const root = await makeTempDir()
+  const store = openSubstrate(resolvePaths({ CHOX_HOME: join(root, 'chox-home') }))
+  const candidate: Candidate = {
+    id: 'handoff-timeout',
+    lens: 'handoff',
+    pattern: 'claude-code>codex',
+    chain: ['claude-code', 'codex'],
+    surfaced: true,
+    occurrences: [],
+    evidence: {
+      occurrenceCount: 2,
+      sessionCount: 4,
+      dates: ['2026-01-01'],
+      repos: ['/redacted/repo'],
+      totalMinutes: 20,
+      medianMinutes: 10
+    }
+  }
+  const engine = new CapturingEngine()
+
+  await confirmHandoffCandidates({ store, candidates: [candidate], engine })
+  expect(engine.timeouts).toEqual([60_000])
   store.close()
 })

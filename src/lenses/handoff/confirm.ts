@@ -3,6 +3,8 @@ import { readSessionExcerpt } from '../../sources/source.js'
 import type { SubstrateStore } from '../../substrate/store.js'
 import type { Candidate, Finding } from '../lens.js'
 
+const confirmationTimeoutMs = 60_000
+
 export interface ConfirmationFailure {
   candidateId: string
   message: string
@@ -111,7 +113,7 @@ export async function confirmHandoffCandidates(opts: {
     try {
       const excerpts = await highestWeightedExcerpts(candidate)
       const response = await opts.engine.analyze(confirmationPrompt(candidate, excerpts), {
-        timeoutMs: 30_000
+        timeoutMs: confirmationTimeoutMs
       })
       const calls = opts.engine.stats().calls - callsBefore
       if (calls > maxCalls) throw new Error(`engine call budget exceeded (${calls}/${maxCalls})`)

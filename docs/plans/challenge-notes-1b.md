@@ -107,9 +107,12 @@ the accepted Phase 1a.2 adapters and the implemented AnalysisEngine adapters.
 
 Verified against the same installed help parsers before implementation:
 
-- Claude analysis uses `claude -p --output-format stream-json --verbose --tools ''`.
-  Analysis needs no filesystem tools, so it does not inherit the relay runtime's
-  permission-bypass flag.
+- Claude analysis uses `claude -p --output-format stream-json --verbose --safe-mode
+  --no-session-persistence [--model <ANTHROPIC_MODEL>] --tools ''`. Safe mode keeps
+  project hooks/plugins/settings out of Chox analysis while preserving auth and model
+  selection; disabled persistence prevents confirmation sessions from feeding future
+  handoff scans. Analysis needs no filesystem tools, so it does not inherit the relay
+  runtime's permission-bypass flag.
 - Codex analysis uses `codex --sandbox read-only --ask-for-approval never exec
   --json -`. This keeps analysis read-only and supplies the prompt on stdin.
 
@@ -117,6 +120,13 @@ Verified against the same installed help parsers before implementation:
 adds a read-only `stats()` method for P14 call/token reporting. Findings persist the
 number of confirmation calls, so relay drafting enforces P7 per finding rather than
 mistaking a shared engine's lifetime call count for one finding's budget.
+
+`ANTHROPIC_MODEL` is now surfaced through `AnalysisEngine.model`, passed explicitly
+to Claude's `--model`, and retained in JSON output. Confirmation gets a 60-second
+process timeout and fallback drafting gets 25 seconds. Their maximum combined engine
+wall time is therefore 85 seconds, preserving five seconds of headroom under P7's
+strictly-under-90-second per-finding budget. Revert path: restore both calls to 30
+seconds; the founder acceptance run below demonstrates why that setting is not viable.
 
 The fixed `Lens.confirm(candidates, engine)` shape lacks the store it must write to.
 No signature was changed: `handoffLens.scan(store, ...)` retains that store for the
@@ -180,6 +190,25 @@ at least one cross-agent candidate.
   installed into another isolated directory, and its packaged CLI completed
   `detect --no-confirm --json` with an isolated home. This verified that the included
   `src/substrate/schema.sql` is found from compiled code.
+
+## Founder acceptance run: first live detect
+
+On 2026-07-13 the founder ran:
+
+```sh
+ANTHROPIC_MODEL=sonnet node dist/bin/chox.js detect --engine claude
+```
+
+The real scan found 222 sessions (184 Claude Code, 38 Codex) and surfaced three
+handoff candidates. All three confirmation calls hit the then-current 30-second
+process timeout, so no relay was drafted and no usage was reported. The pasted output
+also showed 111 Claude unknown entries; Appendix A.1 defines these dozen-plus
+sideband types as counted-and-skipped diagnostics, not parse failures.
+
+No implementer process read either real vendor home. This observation came only from
+the founder's pasted terminal output. The resolution is the 60/25-second budget above,
+explicit `ANTHROPIC_MODEL` reporting, Claude safe mode, and non-persistent analysis.
+The live confirmation/install acceptance step must be rerun from the rebuilt commit.
 
 ## Critical areas reviewed without deviation so far
 

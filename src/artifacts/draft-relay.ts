@@ -8,6 +8,8 @@ import type { Finding } from '../lenses/lens.js'
 import { slugify } from '../slugify.js'
 import type { SubstrateStore } from '../substrate/store.js'
 
+const draftingTimeoutMs = 25_000
+
 export interface DraftedRelay {
   slug: string
   relay: Relay
@@ -130,7 +132,7 @@ export async function draftRelay(
     if (finding.engineCalls >= 3) {
       throw new Error(`relay drafting exceeded the engine call budget (${finding.engineCalls}/3)`)
     }
-    parsed = parseDraft(await engine.analyze(draftPrompt(finding), { timeoutMs: 30_000 }))
+    parsed = parseDraft(await engine.analyze(draftPrompt(finding), { timeoutMs: draftingTimeoutMs }))
   }
   const calls = engine.stats().calls - before
   const findingCalls = finding.engineCalls + calls

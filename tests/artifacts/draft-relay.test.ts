@@ -2,7 +2,7 @@ import { expect, test } from 'vitest'
 
 import { draftRelay, persistedDraft } from '../../src/artifacts/draft-relay.js'
 import { compileRelay } from '../../src/artifacts/relay-compiler.js'
-import type { AnalysisEngine, EngineStats } from '../../src/engines/engine.js'
+import type { AnalysisEngine, EngineOpts, EngineStats } from '../../src/engines/engine.js'
 import type { Finding } from '../../src/lenses/lens.js'
 
 function finding(draft: unknown): Finding {
@@ -33,15 +33,17 @@ class FakeEngine implements AnalysisEngine {
   readonly id = 'claude'
   calls = 0
   prompts: string[] = []
+  timeouts: Array<number | undefined> = []
   response: unknown
 
   constructor(response: unknown) {
     this.response = response
   }
 
-  async analyze(prompt: string): Promise<unknown> {
+  async analyze(prompt: string, opts: EngineOpts = {}): Promise<unknown> {
     this.calls += 1
     this.prompts.push(prompt)
+    this.timeouts.push(opts.timeoutMs)
     return this.response
   }
 
@@ -81,6 +83,7 @@ test('drafting can use one fallback call and rejects a budget overrun cleanly', 
     slug: 'plan-implement-review'
   })
   expect(engine.calls).toBe(1)
+  expect(engine.timeouts).toEqual([25_000])
   expect(engine.prompts[0]).not.toContain('/repo')
 
   const overBudget = new FakeEngine(draft)

@@ -53,7 +53,7 @@ Chox, Claude, or Codex homes.
 
 ```text
 npm run typecheck                                             pass
-npm test                                                      pass (135 tests)
+npm test                                                      pass (137 tests)
 npm run build                                                 pass
 npm run fixtures:verify                                       pass
 isolated node dist/bin/chox.js detect --json                  pass (honest empty output)
@@ -90,10 +90,11 @@ prefix.
 - Push the branch or open its PR and confirm the configured Ubuntu + macOS × Node
   22/24 GitHub Actions matrix. Every matrix command passes locally, but remote CI was
   not triggered from this implementation session.
-- Run `chox detect` against the real local histories and confirm that the suggested
-  loop matches the hand-authored Phase 1a relay. The implementer intentionally never
-  read the founder's real homes; the committed redacted corpus does surface at least
-  one deterministic handoff candidate.
+- Rerun `ANTHROPIC_MODEL=sonnet node dist/bin/chox.js detect --engine claude` against
+  the rebuilt commit. The first founder run scanned 222 sessions and surfaced three
+  candidates, but all hit the former 30-second timeout. Confirmation now gets 60
+  seconds, the selected model is surfaced, and Claude analysis is safe-mode and
+  non-persistent. The implementer intentionally never read the founder's real homes.
 - Choose an engine, review its announced spend, install the confirmed finding, and
   record the cross-agent demo. Real confirmation/drafting is covered by fake binaries;
   only the single isolated F9 originator probe invoked a live Codex CLI.

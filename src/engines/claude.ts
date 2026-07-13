@@ -18,13 +18,20 @@ function token(value: unknown): number | undefined {
 export function createClaudeEngine(env: NodeJS.ProcessEnv = process.env): AnalysisEngine {
   let calls = 0
   const usage: EngineUsage = {}
+  const model = env.ANTHROPIC_MODEL?.trim() || undefined
   return {
     id: 'claude',
+    ...(model ? { model } : {}),
     async analyze(prompt, opts = {}) {
       calls += 1
       const result = await runEngineProcess({
         binary: 'claude',
-        args: ['-p', '--output-format', 'stream-json', '--verbose', '--tools', ''],
+        args: [
+          '-p', '--output-format', 'stream-json', '--verbose',
+          '--safe-mode', '--no-session-persistence',
+          ...(model ? ['--model', model] : []),
+          '--tools', ''
+        ],
         env,
         cwd: process.cwd(),
         prompt,

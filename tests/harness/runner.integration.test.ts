@@ -1,4 +1,4 @@
-import { appendFile, readFile } from 'node:fs/promises'
+import { appendFile, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { afterEach, describe, expect, test } from 'vitest'
@@ -270,6 +270,83 @@ describe.sequential('runner integration', () => {
       const calls = await invocations(fixture.fake.logPath)
       expect(calls).toHaveLength(2)
       expect(calls[1]?.stdin).toBe(original.hops[0]?.prompt)
+    } finally {
+      fixture.restore()
+    }
+  })
+
+  test('resuming a run whose plan.json is missing fails the run instead of completing it', async () => {
+    const fixture = await setup()
+    try {
+      await setFakeAgentScript(fixture.fake.scriptPath, { artifacts: { 'spec.md': '# Plan\n' } })
+      const interrupted = scriptedGate([])
+      interrupted.readKey = async () => { throw new RunInterruptedError() }
+      await expect(executeRun({
+        plan: makePlan([makeHop(0)]),
+        repoRoot: fixture.repoRoot,
+        paths: fixture.paths,
+        io: interrupted,
+        unattended: false
+      })).rejects.toBeInstanceOf(RunInterruptedError)
+
+      const resume = await findResumableRun('demo', fixture.paths)
+      if (!resume) throw new Error('expected resumable run')
+      await saveState(resume, { status: 'running', gate: undefined })
+      await rm(join(resume.dir, 'plan.json'))
+      const io = scriptedGate([])
+
+      const result = await executeRun({
+        plan: { slug: 'demo', hops: [] },
+        repoRoot: fixture.repoRoot,
+        paths: fixture.paths,
+        io,
+        unattended: true,
+        resume
+      })
+      expect(result.status).toBe('failed')
+      expect(io.output.join('\n')).toMatch(/unreadable/i)
+      expect(JSON.parse(await readFile(join(resume.dir, 'run.json'), 'utf8'))).toMatchObject({
+        status: 'failed'
+      })
+      expect(await invocations(fixture.fake.logPath)).toHaveLength(1)
+    } finally {
+      fixture.restore()
+    }
+  })
+
+  test('a persisted plan with zero hops fails the resumed run instead of completing it', async () => {
+    const fixture = await setup()
+    try {
+      await setFakeAgentScript(fixture.fake.scriptPath, { artifacts: { 'spec.md': '# Plan\n' } })
+      const interrupted = scriptedGate([])
+      interrupted.readKey = async () => { throw new RunInterruptedError() }
+      await expect(executeRun({
+        plan: makePlan([makeHop(0)]),
+        repoRoot: fixture.repoRoot,
+        paths: fixture.paths,
+        io: interrupted,
+        unattended: false
+      })).rejects.toBeInstanceOf(RunInterruptedError)
+
+      const resume = await findResumableRun('demo', fixture.paths)
+      if (!resume) throw new Error('expected resumable run')
+      await saveState(resume, { status: 'running', gate: undefined })
+      await writeFile(join(resume.dir, 'plan.json'), JSON.stringify({ slug: 'demo', hops: [] }))
+      const io = scriptedGate([])
+
+      const result = await executeRun({
+        plan: { slug: 'demo', hops: [] },
+        repoRoot: fixture.repoRoot,
+        paths: fixture.paths,
+        io,
+        unattended: true,
+        resume
+      })
+      expect(result.status).toBe('failed')
+      expect(io.output.join('\n')).toMatch(/zero hops/i)
+      expect(JSON.parse(await readFile(join(resume.dir, 'run.json'), 'utf8'))).toMatchObject({
+        status: 'failed'
+      })
     } finally {
       fixture.restore()
     }

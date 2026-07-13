@@ -2,6 +2,7 @@ import { copyFile, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/p
 import { basename, join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 
+import type { ExecutionPlan } from '../artifacts/relay-compiler.js'
 import type { Deviation } from './autonomy.js'
 import { createEventWriter, type RunEventWriter } from './run-events.js'
 import { ensureChoxHome, resolvePaths, type ChoxPaths } from '../paths.js'
@@ -58,6 +59,7 @@ async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
 export async function createRun(
   slug: string,
   init: RunInit,
+  plan: ExecutionPlan,
   paths: ChoxPaths = resolvePaths()
 ): Promise<RunHandle> {
   await ensureChoxHome(paths)
@@ -65,6 +67,7 @@ export async function createRun(
   await mkdir(parent, { recursive: true })
   const dir = join(parent, init.runId)
   await mkdir(dir, { recursive: false })
+  await writeJsonAtomic(join(dir, 'plan.json'), plan)
   const now = new Date().toISOString()
   const state: RunState = {
     ...init,

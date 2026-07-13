@@ -3,6 +3,7 @@ import { join } from 'node:path'
 
 import { afterEach, expect, test } from 'vitest'
 
+import type { ExecutionPlan } from '../../src/artifacts/relay-compiler.js'
 import { resolvePaths } from '../../src/paths.js'
 import {
   createWorktree,
@@ -14,6 +15,19 @@ import { cleanupTempDirs, makeTempDir } from '../helpers/temp.js'
 import { git, initGitRepo } from '../helpers/git.js'
 
 afterEach(cleanupTempDirs)
+
+const testPlan: ExecutionPlan = {
+  slug: 'demo',
+  hops: [{
+    index: 0,
+    runtime: 'claude',
+    role: 'plan',
+    autonomy: 'autonomous',
+    prompt: 'Create .chox-run/spec.md',
+    produces: ['.chox-run/spec.md'],
+    gated: true
+  }]
+}
 
 async function setup() {
   const root = await makeTempDir()
@@ -65,7 +79,7 @@ test('orphan sweep commits dirty terminal worktrees before removing them', async
     repoRoot,
     worktreePath: wt.path,
     branch: wt.branch
-  }, paths)
+  }, testPlan, paths)
   await writeFile(join(wt.path, 'orphan.txt'), 'must survive\n')
   await saveState(run, { status: 'failed' })
   await run.events.close()
@@ -102,7 +116,7 @@ test('a manually deleted worktree is warned about and pruned without crashing', 
     repoRoot,
     worktreePath: wt.path,
     branch: wt.branch
-  }, paths)
+  }, testPlan, paths)
   await run.events.close()
   await rm(wt.path, { recursive: true, force: true })
   const result = await sweepOrphans('demo', paths)

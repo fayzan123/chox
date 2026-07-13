@@ -3,6 +3,7 @@ import { join } from 'node:path'
 
 import { afterEach, expect, test, vi } from 'vitest'
 
+import type { ExecutionPlan } from '../../src/artifacts/relay-compiler.js'
 import { resolvePaths } from '../../src/paths.js'
 import {
   createRun,
@@ -14,6 +15,19 @@ import { cleanupTempDirs, makeTempDir } from '../helpers/temp.js'
 
 afterEach(cleanupTempDirs)
 
+const testPlan: ExecutionPlan = {
+  slug: 'demo',
+  hops: [{
+    index: 0,
+    runtime: 'claude',
+    role: 'plan',
+    autonomy: 'autonomous',
+    prompt: 'Create .chox-run/spec.md',
+    produces: ['.chox-run/spec.md'],
+    gated: true
+  }]
+}
+
 async function createTestRun(root: string, runId: string, updatedAt?: string) {
   const paths = resolvePaths({ CHOX_HOME: join(root, 'home') })
   const handle = await createRun('demo', {
@@ -21,10 +35,20 @@ async function createTestRun(root: string, runId: string, updatedAt?: string) {
     repoRoot: join(root, 'repo'),
     worktreePath: join(root, 'worktree', runId),
     branch: `chox/demo/${runId}`
-  }, paths)
+  }, testPlan, paths)
   if (updatedAt) await saveState(handle, { updatedAt })
   return { paths, handle }
 }
+
+test('createRun persists plan.json alongside run.json', async () => {
+  const root = await makeTempDir()
+  const { handle } = await createTestRun(root, 'run-1')
+
+  const saved = JSON.parse(await readFile(join(handle.dir, 'plan.json'), 'utf8')) as ExecutionPlan
+  expect(saved).toEqual(testPlan)
+  expect(saved.hops).toHaveLength(1)
+  await handle.events.close()
+})
 
 test('run state saves atomically and remains complete JSON', async () => {
   const root = await makeTempDir()

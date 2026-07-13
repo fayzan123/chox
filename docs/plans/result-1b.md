@@ -87,6 +87,9 @@ prefix.
 
 ## Remaining founder acceptance
 
+- Push the branch or open its PR and confirm the configured Ubuntu + macOS × Node
+  22/24 GitHub Actions matrix. Every matrix command passes locally, but remote CI was
+  not triggered from this implementation session.
 - Run `chox detect` against the real local histories and confirm that the suggested
   loop matches the hand-authored Phase 1a relay. The implementer intentionally never
   read the founder's real homes; the committed redacted corpus does surface at least

@@ -123,3 +123,99 @@ entry includes the packet behavior to revert to if the PM prefers literal confor
 - UTC run IDs use a filesystem-safe timestamp (no colons), required on Windows.
 - C4–C6 artifact export surfaces remain intentionally uncovered in Phase 1a, as the
   packet requires; C6's deterministic branch collision behavior is covered here.
+
+## 1a.2 — 2026-07-13
+
+The 1a.2 packet was reviewed against the amended `SPEC.md`, the current
+`b793123` resume implementation, both installed CLI parsers, and the first-run UX
+findings before implementation. The notes below record the compatibility choices,
+on-disk clarification, and delegated judgment made for this phase.
+
+### 10. Legacy persisted plans keep their original headless behavior
+
+- **Packet:** a missing `RelayHop.interaction` compiles to `interactive`.
+- **Implementation:** newly compiled plans follow that rule. A persisted 1a
+  `plan.json` with no `interaction` field is normalized to `headless` only while
+  resuming that existing run.
+- **Why:** every 1a plan was compiled and executed headlessly. Reinterpreting an
+  in-flight persisted plan as interactive would violate the stronger resume rule:
+  resume executes the exact persisted plan and must not silently change execution
+  semantics after an upgrade.
+- **Revert:** reject legacy plans with upgrade guidance, or reinterpret the missing
+  field as `interactive` and accept that old resumes change mode.
+
+### 11. Run state records the base commit used by the visibility summary
+
+- **Packet:** the completion summary reports the overall file footprint versus the
+  base commit, but the inherited 1a `RunState` does not retain that commit.
+- **Implementation:** new runs persist optional `baseCommit` in `run.json`, and
+  `Worktree` carries it from creation. Old runs derive a best-effort merge base on
+  resume. The summary diffs tracked, committed, and uncommitted changes plus
+  untracked files against this commit before teardown.
+- Per-hop `footprint.json` snapshots now also retain the hop-start `HEAD` and Git
+  blob identities for dirty paths. This keeps files committed during a native
+  session visible without re-attributing unchanged dirt from an earlier hop. A
+  legacy snapshot without that metadata falls back visibly to the current retry
+  baseline rather than manufacturing a delta.
+- **Why:** a final `git status` cannot see changes an agent committed during its
+  native session. Persisting the actual worktree origin makes the summary honest and
+  stable even if the invocation repo advances during a long gated run.
+- **Revert:** remove `baseCommit` and calculate a merge base at completion, with the
+  acknowledged risk that concurrent branch movement changes the reported baseline.
+
+### 12. Installed CLI flags and prompt forms were verified
+
+Verified locally on 2026-07-13:
+
+- **Claude Code 2.1.207:** interactive accepts
+  `claude [--model <m>] <prompt>`; headless accepts
+  `claude -p --output-format stream-json --verbose
+  --dangerously-skip-permissions [--model <m>]`. The interactive adapter uses
+  inherited stdio and deliberately passes no permission-bypass flag. Both exact
+  flag compositions returned exit 0 under a `--version` parser probe.
+- **Codex CLI 0.144.1:** interactive accepts
+  `codex [--model <m>] <prompt>`; headless accepts
+  `codex [--model <m>] --sandbox workspace-write --ask-for-approval never exec
+  --json -`, where `-` reads the prompt from stdin. The interactive adapter passes
+  neither an approval override nor a sandbox override. Both exact flag compositions
+  returned exit 0 under a `--version` parser probe; `codex exec --help` explicitly
+  documents `--json`, `--model`, and stdin via `-`.
+- Interactive prompts therefore travel as one argv element as the 1a.2 packet
+  requires, while headless prompts remain on stdin. This is intentionally bounded by
+  macOS/Linux `ARG_MAX`; no alternate bridging protocol was added.
+
+The normalizers handle Claude model metadata on init/assistant events and aggregate
+usage on result events, plus Codex usage on `turn.completed` and model metadata when
+a thread/session event supplies it. When a CLI does not report the resolved
+configured model, Chox continues to display and event `CLI default` rather than
+guessing from vendor configuration.
+
+### 13. Manifest command observations remain enabled across eligible hops
+
+- **Delegated judgment (FIX-5):** command comparison remains enabled for every
+  strict/autonomous hop when a manifest is available, matching the established 1a
+  autonomy semantics. The gate now shows at most two advisory observations and
+  points to `events.jsonl` for the rest.
+- **Why:** the current manifest has no owner-hop identifier, roles are open strings,
+  and review/fix hops may legitimately execute the manifest's verification commands.
+  Guessing that only a role literally named `implement` owns commands would silently
+  weaken observation. The new collapse removes the user-facing noise without
+  discarding the audit data.
+- **Revert:** restrict comparison to selected role strings, or add explicit manifest
+  ownership metadata in a later IR phase.
+
+### Additional 1a.2 review findings (handled without contract deviations)
+
+- The completion hang was the terminal gate leaving stdin in flowing mode after a
+  raw key read. Every key, invalid key, interrupt, line read, editor launch, and
+  native-session launch now removes listeners, restores raw mode, and pauses stdin.
+  The heartbeat timer is cleared and unreferenced as a second process-egress guard.
+- Headless progress prints once immediately after the child emits `spawn`, then at
+  five-second TTY intervals or thirty-second non-TTY intervals. Interactive sessions
+  emit no Chox heartbeat while the native UI owns the terminal.
+- Usage summaries preserve the CLIs' reported input, cached-input, output, and total
+  fields rather than inventing a cross-vendor total with incompatible cache
+  semantics. Interactive usage is explicitly `n/a (interactive session)`; missing
+  headless usage is `n/a (not reported)`.
+- No dependency, CLI flag, future-phase stub, model pin in the example relay, or
+  native-Windows support was added.

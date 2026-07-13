@@ -25,7 +25,8 @@ const testPlan: ExecutionPlan = {
     autonomy: 'autonomous',
     prompt: 'Create .chox-run/spec.md',
     produces: ['.chox-run/spec.md'],
-    gated: true
+    gated: true,
+    interaction: 'headless'
   }]
 }
 

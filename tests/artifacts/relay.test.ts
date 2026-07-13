@@ -79,7 +79,9 @@ test('a repo-local relay loads, compiles artifact paths, and renders exact promp
         role: 'implement',
         promptTemplate: 'implement.md',
         autonomy: 'strict',
-        produces: ['result.md']
+        produces: ['result.md'],
+        model: 'gpt-5.3-codex',
+        interaction: 'headless'
       }
     ]
   }))
@@ -98,7 +100,12 @@ test('a repo-local relay loads, compiles artifact paths, and renders exact promp
     `Write .chox-run/spec.md, .chox-run/challenge-notes.md for ${repoRoot}`
   )
   expect(plan.hops[1]?.prompt).toBe('Read .chox-run/spec.md exactly')
+  expect(plan.hops[0]).toMatchObject({ interaction: 'interactive' })
+  expect(plan.hops[0]?.model).toBeUndefined()
+  expect(plan.hops[1]).toMatchObject({ interaction: 'headless', model: 'gpt-5.3-codex' })
   expect(renderPlan(plan)).toContain(plan.hops[1]?.prompt)
+  expect(renderPlan(plan)).toMatch(/Interaction: interactive[\s\S]*Model: CLI default/)
+  expect(renderPlan(plan)).toMatch(/Interaction: headless[\s\S]*Model: gpt-5\.3-codex/)
   expect(await readFile(join(relayDir, 'plan.md'), 'utf8')).toBe('Write {{produces}} for {{repo}}')
 })
 
@@ -155,4 +162,16 @@ test('skillRef is rejected until composition ships', () => {
     slug: 'demo',
     hops: [oneHop({ skillRef: 'review' })]
   }, { slug: 'demo' })).toThrow(/not supported until relay composition ships/)
+})
+
+test('model and interaction reject invalid boundary values without a model allowlist', () => {
+  expect(() => validateRelay({
+    slug: 'demo',
+    hops: [oneHop({ model: '   ', interaction: 'ambient' })]
+  }, { slug: 'demo' })).toThrowError(/model must be a non-empty string[\s\S]*interaction must be 'interactive' or 'headless'/)
+
+  expect(validateRelay({
+    slug: 'demo',
+    hops: [oneHop({ model: 'vendor/model-next-2026' })]
+  }, { slug: 'demo' }).hops[0]?.model).toBe('vendor/model-next-2026')
 })

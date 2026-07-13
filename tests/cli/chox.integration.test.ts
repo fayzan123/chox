@@ -69,6 +69,8 @@ test('a non-TTY attended run fails before creating a worktree', async () => {
     stdinIsTTY: false
   })
 
+  expect(await runCli(['run', 'demo', '--dry-run'], output.ctx)).toBe(0)
+  expect(output.stdout.join('')).toMatch(/Interaction: interactive[\s\S]*Model: CLI default/)
   expect(await runCli(['run', 'demo'], output.ctx)).toBe(1)
   expect(output.stderr.join('')).toMatch(/TTY.*--unattended/i)
   await expect(readdir(join(choxHome, 'worktrees'))).rejects.toThrow()

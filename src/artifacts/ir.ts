@@ -2,6 +2,7 @@ import { ChoxUsageError } from '../errors.js'
 import { isValidSlug } from '../slugify.js'
 
 export type Autonomy = 'strict' | 'challenge' | 'autonomous'
+export type Interaction = 'interactive' | 'headless'
 
 export interface Relay {
   slug: string
@@ -16,6 +17,8 @@ export interface RelayHop {
   promptTemplate: string
   autonomy: Autonomy
   produces: string[]
+  model?: string
+  interaction?: Interaction
   skillRef?: string
 }
 
@@ -90,6 +93,12 @@ export function validateRelay(raw: unknown, ctx: { slug: string }): Relay {
     if (autonomy !== 'strict' && autonomy !== 'challenge' && autonomy !== 'autonomous') {
       problems.push(`${label} autonomy must be 'strict', 'challenge', or 'autonomous'`)
     }
+    if (value.model !== undefined && (typeof value.model !== 'string' || value.model.trim() === '')) {
+      problems.push(`${label} model must be a non-empty string when present`)
+    }
+    if (value.interaction !== undefined && value.interaction !== 'interactive' && value.interaction !== 'headless') {
+      problems.push(`${label} interaction must be 'interactive' or 'headless' when present`)
+    }
     if (!Array.isArray(value.produces)) {
       problems.push(`${label} produces must be an array of artifact filenames`)
     } else {
@@ -112,6 +121,10 @@ export function validateRelay(raw: unknown, ctx: { slug: string }): Relay {
       promptTemplate,
       autonomy: autonomy as Autonomy,
       produces,
+      ...(typeof value.model === 'string' ? { model: value.model } : {}),
+      ...(value.interaction === 'interactive' || value.interaction === 'headless'
+        ? { interaction: value.interaction }
+        : {}),
       ...('skillRef' in value ? { skillRef: String(value.skillRef) } : {})
     })
   }

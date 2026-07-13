@@ -1,5 +1,5 @@
 import { ChoxUsageError } from '../errors.js'
-import type { Autonomy } from './ir.js'
+import type { Autonomy, Interaction } from './ir.js'
 import type { LoadedRelay } from './relay-loader.js'
 
 export interface CompiledHop {
@@ -10,6 +10,8 @@ export interface CompiledHop {
   prompt: string
   produces: string[]
   gated: boolean
+  interaction: Interaction
+  model?: string
 }
 
 export interface ExecutionPlan {
@@ -72,7 +74,9 @@ export function compileRelay(loaded: LoadedRelay): ExecutionPlan {
       autonomy: hop.autonomy,
       prompt,
       produces: names.map(artifactPath),
-      gated: loaded.relay.gates === 'all-boundaries'
+      gated: loaded.relay.gates === 'all-boundaries',
+      interaction: hop.interaction ?? 'interactive',
+      ...(hop.model !== undefined ? { model: hop.model } : {})
     })
     for (const name of names) produced.add(name)
   }
@@ -93,6 +97,8 @@ export function renderPlan(plan: ExecutionPlan): string {
     lines.push(
       `Hop ${hop.index + 1}: ${hop.role}`,
       `  Runtime: ${hop.runtime}`,
+      `  Interaction: ${hop.interaction}`,
+      `  Model: ${hop.model ?? 'CLI default'}`,
       `  Autonomy: ${hop.autonomy}`,
       `  Produces: ${hop.produces.length > 0 ? hop.produces.join(', ') : '(none)'}`,
       `  Gate follows: ${hop.gated ? 'yes' : 'no'}`,

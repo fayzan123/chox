@@ -25,6 +25,7 @@ function makeHop(index: number, overrides: Partial<CompiledHop> = {}): CompiledH
     prompt: index === 0 ? 'Create .chox-run/spec.md' : 'Read .chox-run/spec.md and implement it',
     produces: [index === 0 ? '.chox-run/spec.md' : '.chox-run/result.md'],
     gated: true,
+    interaction: 'headless',
     ...overrides
   }
 }
@@ -56,11 +57,20 @@ function scriptedGate(keys: string[], lines: string[] = [], edit?: (path: string
   }
 }
 
-async function invocations(path: string): Promise<Array<{ binary: string, stdin: string }>> {
+async function invocations(path: string): Promise<Array<{
+  binary: string
+  args: string[]
+  stdin: string
+  cwd: string
+  interactive: boolean
+}>> {
   const contents = await readFile(path, 'utf8')
   return contents.trim().split('\n').filter(Boolean).map((line) => JSON.parse(line) as {
     binary: string
+    args: string[]
     stdin: string
+    cwd: string
+    interactive: boolean
   })
 }
 
@@ -91,16 +101,25 @@ describe.sequential('runner integration', () => {
     try {
       await setFakeAgentScript(fixture.fake.scriptPath, { calls: [
         {
-          stdout: [{ type: 'result', result: 'planned' }],
-          artifacts: { 'spec.md': '# Plan\nBuild it\n' }
+          stdout: [
+            { type: 'system', subtype: 'init', model: 'claude-actual' },
+            { type: 'result', result: 'planned', usage: { input_tokens: 20, output_tokens: 5 } }
+          ],
+          artifacts: { 'spec.md': '# Plan\nBuild it\n' },
+          files: { 'plan-output.txt': 'planned\n' }
         },
         {
-          stdout: [{ type: 'item.completed', item: { type: 'agent_message', text: 'implemented' } }],
+          stdout: [
+            { type: 'thread.started', thread_id: 'thread-1', model: 'gpt-pinned' },
+            { type: 'item.completed', item: { type: 'agent_message', text: 'implemented' } },
+            { type: 'turn.completed', usage: { input_tokens: 30, cached_input_tokens: 10, output_tokens: 8 } }
+          ],
           requireArtifacts: ['spec.md'],
-          copyArtifacts: { 'result.md': 'spec.md' }
+          copyArtifacts: { 'result.md': 'spec.md' },
+          files: { 'src/implementation.ts': 'export const done = true\n' }
         }
       ] })
-      const plan = makePlan()
+      const plan = makePlan([makeHop(0), makeHop(1, { model: 'gpt-pinned' })])
       const io = scriptedGate(['a', 'a'])
       const result = await executeRun({
         plan,
@@ -124,16 +143,37 @@ describe.sequential('runner integration', () => {
       expect(calls.map(({ stdin }) => stdin)).toEqual(plan.hops.map(({ prompt }) => prompt))
       expect(renderPlan(plan)).toContain(calls[0]?.stdin)
 
-      const events = []
+      const transcript = io.output.join('\n')
+      expect(transcript).toMatch(/Starting Chox run demo[\s\S]*Worktree: .*demo-[^\n]+[\s\S]*Your repo is untouched/)
+      const worktreePath = transcript.match(/^Worktree: (.+)$/m)?.[1]
+      expect(worktreePath).toBeTruthy()
+      expect(transcript.split(worktreePath as string)).toHaveLength(2)
+      expect(transcript).toMatch(/Hop 1\/2 · plan · claude 1\.0\.0 · model CLI default · autonomy autonomous · headless/)
+      expect(transcript).toMatch(/Hop 1\/2 · 0s elapsed · 0 events · waiting for agent output/)
+      expect(transcript).toMatch(/Files changed this hop: 1 created \(plan-output\.txt\)/)
+      expect(transcript).toMatch(/Action: a → approve[\s\S]*Approved\. Continuing to hop 2\/2 \(implement\)…/)
+      expect(transcript).toMatch(/Approved\. Continuing[\s\S]*Files changed this hop: 1 created \(src\/implementation\.ts\)/)
+      expect(transcript).toMatch(/Run completed[\s\S]*tokens 20 in, 5 out[\s\S]*tokens 30 in, 10 cached, 8 out/)
+      expect(transcript).toMatch(/Files changed overall: 2 created[\s\S]*Merge: git merge chox\/demo\//)
+
+      const events: Array<Record<string, unknown>> = []
       for await (const event of readEvents(join(
         fixture.paths.runs,
         'demo',
         result.runId,
         'events.jsonl'
-      ))) events.push(event.type)
-      expect(events[0]).toBe('run:start')
-      expect(events.filter((type) => type === 'gate:presented')).toHaveLength(2)
-      expect(events.at(-1)).toBe('run:end')
+      ))) events.push(event)
+      expect(events[0]?.type).toBe('run:start')
+      expect(events.filter(({ type }) => type === 'gate:presented')).toHaveLength(2)
+      expect(events.at(-1)?.type).toBe('run:end')
+      expect(events.find(({ type }) => type === 'hop:start')).toMatchObject({
+        interaction: 'headless',
+        model: 'CLI default'
+      })
+      expect(events).toContainEqual(expect.objectContaining({
+        type: 'agent:event',
+        event: { kind: 'session', model: 'claude-actual' }
+      }))
     } finally {
       fixture.restore()
     }
@@ -181,6 +221,68 @@ describe.sequential('runner integration', () => {
       })
       expect(result.status).toBe('completed')
       expect(io.reads).toBe(0)
+      const [call] = await invocations(fixture.fake.logPath)
+      expect(call?.interactive).toBe(false)
+    } finally {
+      fixture.restore()
+    }
+  })
+
+  test('--unattended forces a declared interactive hop to run headlessly', async () => {
+    const fixture = await setup()
+    try {
+      await setFakeAgentScript(fixture.fake.scriptPath, { artifacts: { 'spec.md': '# Plan\n' } })
+      const declaredInteractive = makeHop(0, { interaction: 'interactive' })
+      const result = await executeRun({
+        plan: makePlan([declaredInteractive]),
+        repoRoot: fixture.repoRoot,
+        paths: fixture.paths,
+        io: scriptedGate([]),
+        unattended: true
+      })
+      expect(result.status).toBe('completed')
+      const [call] = await invocations(fixture.fake.logPath)
+      expect(call).toMatchObject({ interactive: false, stdin: declaredInteractive.prompt })
+      expect(call?.args).toContain('-p')
+    } finally {
+      fixture.restore()
+    }
+  })
+
+  test('an interactive hop uses the native session then runs artifact, footprint, and gate checks', async () => {
+    const fixture = await setup()
+    try {
+      await setFakeAgentScript(fixture.fake.scriptPath, {
+        artifacts: { 'spec.md': '# Interactive plan\n' },
+        files: { 'interactive-output.txt': 'done\n' }
+      })
+      const interactive = makeHop(0, {
+        interaction: 'interactive',
+        model: 'claude-pinned'
+      })
+      const io = scriptedGate(['a'])
+      const result = await executeRun({
+        plan: makePlan([interactive]),
+        repoRoot: fixture.repoRoot,
+        paths: fixture.paths,
+        io,
+        unattended: false
+      })
+      expect(result.status).toBe('completed')
+      const [call] = await invocations(fixture.fake.logPath)
+      expect(call?.interactive).toBe(true)
+      expect(call?.cwd).toContain('demo-')
+      expect(call?.args).toContain(interactive.prompt)
+      expect(call?.args).toContain('claude-pinned')
+      expect(call?.args).not.toContain('--dangerously-skip-permissions')
+      const transcript = io.output.join('\n')
+      const nativeWindow = transcript.slice(
+        transcript.indexOf('Opening your claude session'),
+        transcript.indexOf('Hop 1 done')
+      )
+      expect(nativeWindow).not.toContain('elapsed')
+      expect(transcript).toContain('Files changed this hop: 1 created (interactive-output.txt)')
+      expect(transcript).toContain('tokens n/a (interactive session)')
     } finally {
       fixture.restore()
     }
@@ -203,6 +305,9 @@ describe.sequential('runner integration', () => {
       })
       expect(result.status).toBe('aborted')
       expect(io.output.join('\n')).toMatch(/exited with code 7.*approval is blocked/i)
+      expect(io.output.join('\n')).toContain(`Aborting; work preserved on branch ${result.branch}…`)
+      expect(io.output.join('\n')).toContain('Inspect: git show --stat')
+      expect(io.output.join('\n')).not.toContain('Merge: git merge')
     } finally {
       fixture.restore()
     }
@@ -257,6 +362,11 @@ describe.sequential('runner integration', () => {
       const resume = await findResumableRun('demo', fixture.paths)
       if (!resume) throw new Error('expected resumable run')
       await saveState(resume, { status: 'running', gate: undefined })
+      const legacyPlan = JSON.parse(await readFile(join(resume.dir, 'plan.json'), 'utf8')) as {
+        hops: Array<Record<string, unknown>>
+      }
+      delete legacyPlan.hops[0]?.interaction
+      await writeFile(join(resume.dir, 'plan.json'), JSON.stringify(legacyPlan))
 
       const result = await executeRun({
         plan: makePlan([makeHop(0, { prompt: 'new relay prompt must not be used' })]),
@@ -270,6 +380,7 @@ describe.sequential('runner integration', () => {
       const calls = await invocations(fixture.fake.logPath)
       expect(calls).toHaveLength(2)
       expect(calls[1]?.stdin).toBe(original.hops[0]?.prompt)
+      expect(calls[1]?.interactive).toBe(false)
     } finally {
       fixture.restore()
     }
@@ -379,21 +490,24 @@ describe.sequential('runner integration', () => {
     }
   })
 
-  test('redirect reruns the hop with the appended user note', async () => {
+  test('redirect reopens an interactive hop with the appended user note', async () => {
     const fixture = await setup()
     try {
       await setFakeAgentScript(fixture.fake.scriptPath, { artifacts: { 'spec.md': '# Plan\n' } })
+      const io = scriptedGate(['r', 'a'], ['Use the smaller API'])
       const result = await executeRun({
-        plan: makePlan([makeHop(0)]),
+        plan: makePlan([makeHop(0, { interaction: 'interactive' })]),
         repoRoot: fixture.repoRoot,
         paths: fixture.paths,
-        io: scriptedGate(['r', 'a'], ['Use the smaller API']),
+        io,
         unattended: false
       })
       expect(result.status).toBe('completed')
       const calls = await invocations(fixture.fake.logPath)
       expect(calls).toHaveLength(2)
-      expect(calls[1]?.stdin).toContain('## User redirect note\nUse the smaller API')
+      expect(calls.every(({ interactive }) => interactive)).toBe(true)
+      expect(calls[1]?.args.join('\n')).toContain('## User redirect note\nUse the smaller API')
+      expect(io.output.join('\n')).toContain('Re-running hop 1 with your note…')
     } finally {
       fixture.restore()
     }

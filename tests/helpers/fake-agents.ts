@@ -6,6 +6,9 @@ export interface FakeAgentScript {
   artifacts?: Record<string, string>
   copyArtifacts?: Record<string, string>
   requireArtifacts?: string[]
+  files?: Record<string, string>
+  deleteFiles?: string[]
+  delayMs?: number
   exitCode?: number
 }
 
@@ -30,21 +33,23 @@ export async function installFakeAgents(root: string): Promise<{
   const counterPath = join(root, 'counter.txt')
   await mkdir(bin, { recursive: true })
   await writeFile(driver, [
-    "import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'",
+    "import { appendFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises'",
     "import { dirname, join } from 'node:path'",
     '',
     "const [binary, ...args] = process.argv.slice(2)",
-    "let stdin = ''",
-    "for await (const chunk of process.stdin) stdin += chunk",
     "if (args.includes('--version')) { process.stdout.write(binary + '-fake 1.0.0\\n'); process.exit(Number(process.env.FAKE_VERSION_EXIT ?? 0)) }",
+    "const interactive = binary === 'claude' ? !args.includes('-p') : !args.includes('exec')",
+    "let stdin = ''",
+    "if (!interactive) for await (const chunk of process.stdin) stdin += chunk",
     "await writeFile(process.env.FAKE_STDIN_PATH, stdin)",
     "await writeFile(process.env.FAKE_ARGV_PATH, JSON.stringify({ binary, args }))",
-    "await appendFile(process.env.FAKE_LOG_PATH, JSON.stringify({ binary, args, stdin }) + '\\n')",
+    "await appendFile(process.env.FAKE_LOG_PATH, JSON.stringify({ binary, args, stdin, cwd: process.cwd(), interactive }) + '\\n')",
     "let call = 0",
     "try { call = Number(await readFile(process.env.FAKE_COUNTER_PATH, 'utf8')) } catch {}",
     "await writeFile(process.env.FAKE_COUNTER_PATH, String(call + 1))",
     "const instructions = JSON.parse(await readFile(process.env.FAKE_SCRIPT_PATH, 'utf8'))",
     "const script = instructions.calls?.[call] ?? instructions.calls?.at(-1) ?? instructions",
+    "if (script.delayMs) await new Promise((resolve) => setTimeout(resolve, Number(script.delayMs)))",
     "for (const name of script.requireArtifacts ?? []) {",
     "  try { await readFile(join(process.cwd(), '.chox-run', name)) } catch { process.stderr.write('missing required artifact: ' + name + '\\n'); process.exit(97) }",
     '}',
@@ -59,6 +64,12 @@ export async function installFakeAgents(root: string): Promise<{
     "  await mkdir(dirname(path), { recursive: true })",
     "  await writeFile(path, contents)",
     '}',
+    "for (const [name, contents] of Object.entries(script.files ?? {})) {",
+    "  const path = join(process.cwd(), name)",
+    "  await mkdir(dirname(path), { recursive: true })",
+    "  await writeFile(path, String(contents))",
+    '}',
+    "for (const name of script.deleteFiles ?? []) await rm(join(process.cwd(), name), { force: true })",
     "for (const line of script.stdout ?? []) process.stdout.write((typeof line === 'string' ? line : JSON.stringify(line)) + '\\n')",
     'process.exitCode = Number(script.exitCode ?? 0)',
     ''

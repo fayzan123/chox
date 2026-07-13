@@ -1,17 +1,26 @@
 import { randomBytes } from 'node:crypto'
 import { access, readFile, rm, writeFile } from 'node:fs/promises'
-import { basename, join } from 'node:path'
+import { basename, join, relative } from 'node:path'
 import type { ChildProcess } from 'node:child_process'
 
 import type { CompiledHop, ExecutionPlan } from '../artifacts/relay-compiler.js'
+import type { Interaction } from '../artifacts/ir.js'
 import { ChoxError } from '../errors.js'
 import type { ChoxPaths } from '../paths.js'
 import { slugify } from '../slugify.js'
-import { getRuntime, type RuntimeEvent } from '../runtimes/runtime.js'
+import {
+  getRuntime,
+  type RuntimeEvent,
+  type RuntimeProbe,
+  type TokenUsage
+} from '../runtimes/runtime.js'
 import {
   checkAutonomy,
+  diffFootprints,
+  diffFromBase,
   snapshotFootprint,
   type Deviation,
+  type FootprintChange,
   type FootprintSnapshot,
   type StrictManifest
 } from './autonomy.js'
@@ -22,6 +31,14 @@ import {
   type GateIO
 } from './gates.js'
 import { createWorktree, sweepOrphans, teardownWorktree, type Worktree } from './isolation.js'
+import { runGit } from '../system/command.js'
+import {
+  createHeartbeat,
+  formatDuration,
+  hopSummaries,
+  renderCompletionSummary,
+  runtimeVersion
+} from './run-visibility.js'
 import {
   createRun,
   saveState,
@@ -41,6 +58,12 @@ interface HopResult {
   deviations: Deviation[]
   blocking: boolean
   degradedToChallenge: boolean
+  durationMs: number
+  footprint: FootprintChange[]
+  interaction: Interaction
+  written: string[]
+  model: string
+  usage?: TokenUsage
 }
 
 function generateRunId(): string {
@@ -56,7 +79,7 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-async function preflight(plan: ExecutionPlan): Promise<void> {
+async function preflight(plan: ExecutionPlan): Promise<Map<string, RuntimeProbe>> {
   const ids = [...new Set(plan.hops.map((hop) => hop.runtime))]
   const results = await Promise.all(ids.map(async (id) => ({ id, probe: await getRuntime(id).preflight() })))
   const problems = results.filter(({ probe }) => !probe.present || probe.problem)
@@ -65,14 +88,55 @@ async function preflight(plan: ExecutionPlan): Promise<void> {
       `Agent runtime preflight failed:\n${problems.map(({ id, probe }) => `- ${id}: ${probe.problem ?? 'not present'}`).join('\n')}`
     )
   }
+  return new Map(results.map(({ id, probe }) => [id, probe]))
 }
 
-function validPlan(value: unknown): value is ExecutionPlan {
-  return typeof value === 'object'
-    && value !== null
-    && !Array.isArray(value)
-    && typeof (value as Partial<ExecutionPlan>).slug === 'string'
-    && Array.isArray((value as Partial<ExecutionPlan>).hops)
+function record(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined
+}
+
+function parsePersistedPlan(value: unknown): ExecutionPlan {
+  const plan = record(value)
+  if (!plan || typeof plan.slug !== 'string' || !Array.isArray(plan.hops)) {
+    throw new Error('invalid plan shape')
+  }
+  const hops: CompiledHop[] = plan.hops.map((rawHop, position) => {
+    const hop = record(rawHop)
+    if (
+      !hop
+      || typeof hop.index !== 'number'
+      || typeof hop.runtime !== 'string'
+      || typeof hop.role !== 'string'
+      || (hop.autonomy !== 'strict' && hop.autonomy !== 'challenge' && hop.autonomy !== 'autonomous')
+      || typeof hop.prompt !== 'string'
+      || !Array.isArray(hop.produces)
+      || !hop.produces.every((item) => typeof item === 'string')
+      || typeof hop.gated !== 'boolean'
+      || (hop.model !== undefined && (typeof hop.model !== 'string' || hop.model.trim() === ''))
+      || (
+        hop.interaction !== undefined
+        && hop.interaction !== 'interactive'
+        && hop.interaction !== 'headless'
+      )
+    ) {
+      throw new Error(`invalid persisted hop at position ${position}`)
+    }
+    return {
+      index: hop.index,
+      runtime: hop.runtime,
+      role: hop.role,
+      autonomy: hop.autonomy,
+      prompt: hop.prompt,
+      produces: hop.produces as string[],
+      gated: hop.gated,
+      // Plans persisted by Phase 1a predate this field and were always headless.
+      interaction: hop.interaction ?? 'headless',
+      ...(typeof hop.model === 'string' ? { model: hop.model } : {})
+    }
+  })
+  return { slug: plan.slug, hops }
 }
 
 async function persistedPlan(handle: RunHandle): Promise<ExecutionPlan> {
@@ -80,8 +144,7 @@ async function persistedPlan(handle: RunHandle): Promise<ExecutionPlan> {
   let plan: ExecutionPlan
   try {
     const value = JSON.parse(await readFile(path, 'utf8')) as unknown
-    if (!validPlan(value)) throw new Error('invalid plan shape')
-    plan = value
+    plan = parsePersistedPlan(value)
   } catch (error) {
     throw new ChoxError(`The persisted execution plan is unreadable at ${path}: ${String(error)}`)
   }
@@ -162,20 +225,51 @@ async function runAgentAttempt(opts: {
   before: FootprintSnapshot
   manifest?: StrictManifest
   prompt: string
+  interaction: Interaction
+  runtimeVersion: string
+  totalHops: number
+  io: GateIO
 }): Promise<HopResult> {
   const runtime = getRuntime(opts.hop.runtime)
   const startedAt = Date.now()
-  const child = runtime.spawnHeadless(opts.prompt, { cwd: opts.worktree, env: process.env })
+  opts.io.print(
+    `Hop ${opts.hop.index + 1}/${opts.totalHops} · ${opts.hop.role} · ${opts.hop.runtime} ${opts.runtimeVersion} · model ${opts.hop.model ?? 'CLI default'} · autonomy ${opts.hop.autonomy} · ${opts.interaction}`
+  )
+  if (opts.interaction === 'interactive') {
+    opts.io.print(
+      `Opening your ${opts.hop.runtime} session in the isolated worktree — exit the session when the hop's outputs are written.`
+    )
+  }
+  opts.io.release?.()
+  const runOpts = {
+    cwd: opts.worktree,
+    env: process.env,
+    ...(opts.hop.model !== undefined ? { model: opts.hop.model } : {})
+  }
+  const child = opts.interaction === 'interactive'
+    ? runtime.spawnInteractive(opts.prompt, runOpts)
+    : runtime.spawnHeadless(opts.prompt, runOpts)
   const exitPromise = waitForExit(child)
   const stderrPromise = collectStderr(child)
   const spawn = await waitForSpawn(child)
+  let heartbeat: ReturnType<typeof createHeartbeat> | undefined
   if (spawn.spawned) {
     opts.handle.events.append('hop:start', {
       hop: opts.hop.index,
       runtime: opts.hop.runtime,
       role: opts.hop.role,
-      autonomy: opts.hop.autonomy
+      autonomy: opts.hop.autonomy,
+      interaction: opts.interaction,
+      model: opts.hop.model ?? 'CLI default'
     })
+    if (opts.interaction === 'headless') {
+      heartbeat = createHeartbeat({
+        io: opts.io,
+        hop: opts.hop,
+        totalHops: opts.totalHops,
+        startedAt
+      })
+    }
   } else {
     opts.handle.events.append('agent:event', {
       hop: opts.hop.index,
@@ -183,26 +277,36 @@ async function runAgentAttempt(opts: {
     })
   }
 
+  let actualModel: string | undefined
+  let usage: TokenUsage | undefined
   const normalize = (async () => {
-    if (!spawn.spawned || !child.stdout) return
+    if (!spawn.spawned || opts.interaction !== 'headless' || !child.stdout) return
     for await (const event of runtime.normalizeEvents(child.stdout)) {
       opts.handle.events.append('agent:event', { hop: opts.hop.index, event })
+      heartbeat?.observe(event)
+      if (event.kind === 'session') {
+        actualModel = event.model
+        opts.io.print(`Hop ${opts.hop.index + 1} model resolved · ${event.model}`)
+      } else if (event.kind === 'usage') {
+        const { kind: _kind, ...counts } = event
+        usage = counts
+      }
     }
   })()
   const [exitCode, stderr] = await Promise.all([exitPromise, stderrPromise])
-  await normalize
+  try {
+    await normalize
+  } finally {
+    heartbeat?.stop()
+  }
   if (stderr && exitCode !== 0) {
     const event: RuntimeEvent = { kind: 'raw', line: stderr }
     opts.handle.events.append('agent:event', { hop: opts.hop.index, event })
   }
-  opts.handle.events.append('hop:end', {
-    hop: opts.hop.index,
-    exitCode,
-    durationMs: Date.now() - startedAt
-  })
-
+  const written: string[] = []
   for (const artifact of opts.hop.produces) {
     if (await exists(join(opts.worktree, artifact))) {
+      written.push(basename(artifact))
       opts.handle.events.append('artifact:written', {
         hop: opts.hop.index,
         name: basename(artifact),
@@ -217,7 +321,30 @@ async function runAgentAttempt(opts: {
     ...(opts.manifest ? { manifest: opts.manifest } : {}),
     events: opts.handle.events
   })
-  return { exitCode, ...autonomy }
+  const durationMs = Date.now() - startedAt
+  const model = actualModel ?? opts.hop.model ?? 'CLI default'
+  opts.handle.events.append('hop:end', {
+    hop: opts.hop.index,
+    exitCode,
+    durationMs,
+    interaction: opts.interaction,
+    model,
+    ...(usage ? { usage } : {}),
+    footprint: autonomy.footprint,
+    written
+  })
+  opts.io.print(
+    `Hop ${opts.hop.index + 1} done · ${formatDuration(durationMs)} · exit ${exitCode} · wrote ${written.length > 0 ? written.join(', ') : '(none)'}`
+  )
+  return {
+    exitCode,
+    ...autonomy,
+    durationMs,
+    interaction: opts.interaction,
+    written,
+    model,
+    ...(usage ? { usage } : {})
+  }
 }
 
 async function runHop(opts: {
@@ -228,6 +355,9 @@ async function runHop(opts: {
   manifest?: StrictManifest
   prompt: string
   io: GateIO
+  interaction: Interaction
+  runtimeVersion: string
+  totalHops: number
 }): Promise<HopResult> {
   let result = await runAgentAttempt(opts)
   if (result.deviations.some((deviation) => deviation.kind === 'missing-challenge-notes')) {
@@ -244,7 +374,12 @@ async function runHop(opts: {
 async function artifactPresentation(worktree: string, hop: CompiledHop) {
   return Promise.all(hop.produces.map(async (relativePath) => {
     const path = join(worktree, relativePath)
-    return { name: basename(relativePath), path, summary: await summarizeArtifact(path) }
+    return {
+      name: basename(relativePath),
+      path,
+      relativePath: relative(worktree, path).replaceAll('\\', '/'),
+      summary: await summarizeArtifact(path)
+    }
   }))
 }
 
@@ -260,9 +395,19 @@ async function finishRun(
   handle: RunHandle,
   wt: Worktree,
   status: RunStatus,
-  io: GateIO
+  io: GateIO,
+  plan: ExecutionPlan,
+  reason?: string
 ): Promise<RunResult> {
+  io.release?.()
   let finalStatus: RunStatus = status
+  let overallChanges: FootprintChange[] | undefined
+  let overallProblem: string | undefined
+  try {
+    overallChanges = await diffFromBase(wt.path, wt.baseCommit)
+  } catch (error) {
+    overallProblem = String(error)
+  }
   await saveState(handle, { status, gate: undefined })
   try {
     await teardownWorktree(wt, { commitMessage: `chox: preserve ${handle.state.slug} run ${handle.state.runId}` })
@@ -273,6 +418,18 @@ async function finishRun(
   }
   handle.events.append('run:end', { status: finalStatus })
   await handle.events.close()
+  const summaries = await hopSummaries(join(handle.dir, 'events.jsonl'), plan)
+  io.print(renderCompletionSummary({
+    handle,
+    status: finalStatus,
+    plan,
+    summaries,
+    branch: wt.branch,
+    baseCommit: wt.baseCommit,
+    ...(overallChanges ? { overallChanges } : {}),
+    ...(overallProblem ? { overallProblem } : {}),
+    ...(reason ? { reason } : {})
+  }))
   return {
     status: finalStatus as RunResult['status'],
     runId: handle.state.runId,
@@ -283,9 +440,18 @@ async function finishRun(
 async function loadFootprint(handle: RunHandle, io: GateIO): Promise<FootprintSnapshot> {
   const path = join(handle.dir, 'footprint.json')
   try {
-    return JSON.parse(await readFile(path, 'utf8')) as FootprintSnapshot
+    const value = record(JSON.parse(await readFile(path, 'utf8')) as unknown)
+    const entries = record(value?.entries)
+    if (!value || typeof value.head !== 'string' || !entries) throw new Error('invalid footprint shape')
+    for (const entry of Object.values(entries)) {
+      const item = record(entry)
+      if (!item || typeof item.status !== 'string' || typeof item.hash !== 'string') {
+        throw new Error('invalid footprint entry')
+      }
+    }
+    return { head: value.head, entries: entries as FootprintSnapshot['entries'] }
   } catch {
-    io.print('The persisted pre-hop footprint is missing; using the current worktree as the retry baseline.')
+    io.print('The persisted pre-hop footprint is missing or legacy; using the current worktree as the retry baseline.')
     const snapshot = await snapshotFootprint(handle.state.worktreePath)
     await writeFile(path, `${JSON.stringify(snapshot, null, 2)}\n`)
     return snapshot
@@ -303,6 +469,7 @@ export async function executeRun(opts: {
   let handle = opts.resume
   let wt: Worktree | undefined
   let eventsClosed = false
+  let activePlan = opts.plan
   try {
     const sweep = await sweepOrphans(opts.plan.slug, opts.paths)
     for (const warning of sweep.warnings) opts.io.print(`Warning: ${warning}`)
@@ -314,14 +481,27 @@ export async function executeRun(opts: {
           `The run's worktree is gone. Branch ${handle.state.branch} may still hold work; inspect it before starting a new run.`
         )
       }
+      let baseCommit = handle.state.baseCommit
+      if (!baseCommit) {
+        const mergeBase = await runGit(handle.state.repoRoot, [
+          'merge-base',
+          handle.state.branch,
+          'HEAD'
+        ], { allowFailure: true })
+        baseCommit = mergeBase.code === 0 && mergeBase.stdout.trim() !== ''
+          ? mergeBase.stdout.trim()
+          : handle.state.branch
+      }
       wt = {
         path: handle.state.worktreePath,
         branch: handle.state.branch,
-        repoRoot: handle.state.repoRoot
+        repoRoot: handle.state.repoRoot,
+        baseCommit
       }
       plan = await persistedPlan(handle)
     }
-    await preflight(plan)
+    activePlan = plan
+    const probes = await preflight(plan)
 
     if (!handle) {
       const runId = generateRunId()
@@ -331,7 +511,8 @@ export async function executeRun(opts: {
           runId,
           repoRoot: wt.repoRoot,
           worktreePath: wt.path,
-          branch: wt.branch
+          branch: wt.branch,
+          baseCommit: wt.baseCommit
         }, plan, opts.paths)
       } catch (error) {
         await teardownWorktree(wt, { commitMessage: `chox: preserve failed run ${runId}` })
@@ -344,8 +525,21 @@ export async function executeRun(opts: {
         branch: wt.branch,
         dryRun: false
       })
+    } else {
+      handle.events.append('run:resume', {
+        slug: plan.slug,
+        runId: handle.state.runId,
+        currentHop: handle.state.currentHop
+      })
     }
     if (!wt) throw new Error('worktree was not initialized')
+    opts.io.print([
+      `${opts.resume ? 'Resuming' : 'Starting'} Chox run ${plan.slug}`,
+      `Worktree: ${wt.path}`,
+      `Branch: ${wt.branch}`,
+      'Your repo is untouched; agents work in the isolated worktree.',
+      `Events: ${join(handle.dir, 'events.jsonl')}`
+    ].join('\n'))
 
     let pendingGate = handle.state.status === 'awaiting-gate'
     let resumeRunning = Boolean(opts.resume && handle.state.status === 'running')
@@ -361,6 +555,8 @@ export async function executeRun(opts: {
       const hop = sourceHop.autonomy === 'strict' && !manifestResult.manifest
         ? withChallengeNotes(sourceHop)
         : sourceHop
+      const interaction: Interaction = opts.unattended ? 'headless' : hop.interaction
+      const version = runtimeVersion(probes.get(hop.runtime))
 
       let before: FootprintSnapshot
       if (pendingGate || resumeRunning) {
@@ -383,7 +579,12 @@ export async function executeRun(opts: {
           exitCode: gate.exitCode,
           deviations: gate.deviations,
           blocking: gate.blocking,
-          degradedToChallenge: sourceHop.autonomy === 'strict' && !manifestResult.manifest
+          degradedToChallenge: sourceHop.autonomy === 'strict' && !manifestResult.manifest,
+          durationMs: 0,
+          footprint: await diffFootprints(wt.path, before, await snapshotFootprint(wt.path)),
+          interaction,
+          written: [],
+          model: hop.model ?? 'CLI default'
         }
       } else {
         if (hop.autonomy === 'challenge' || (sourceHop.autonomy === 'strict' && !manifestResult.manifest)) {
@@ -397,7 +598,10 @@ export async function executeRun(opts: {
           before,
           ...(manifestResult.manifest ? { manifest: manifestResult.manifest } : {}),
           prompt: hop.prompt,
-          io: opts.io
+          io: opts.io,
+          interaction,
+          runtimeVersion: version,
+          totalHops: plan.hops.length
         })
       }
       pendingGate = false
@@ -416,7 +620,16 @@ export async function executeRun(opts: {
         })
 
         if (opts.unattended || !hop.gated) {
-          if (blocking) return await finishRun(handle, wt, 'failed', opts.io)
+          if (blocking) {
+            return await finishRun(
+              handle,
+              wt,
+              'failed',
+              opts.io,
+              plan,
+              `Hop ${hop.index + 1} ended with a blocking failure.`
+            )
+          }
           handle.events.append('gate:action', { hop: hop.index, action: 'approve' })
           await snapshotExisting(handle, hop)
           await saveState(handle, {
@@ -441,10 +654,15 @@ export async function executeRun(opts: {
           artifactPaths: artifacts,
           deviations: result.deviations,
           blocking,
+          footprint: result.footprint,
+          worktree: wt.path,
           io: opts.io
         })
         handle.events.append('gate:action', { hop: hop.index, action: outcome.action })
-        if (outcome.action === 'abort') return await finishRun(handle, wt, 'aborted', opts.io)
+        if (outcome.action === 'abort') {
+          opts.io.print(`Aborting; work preserved on branch ${wt.branch}…`)
+          return await finishRun(handle, wt, 'aborted', opts.io, plan)
+        }
         if (outcome.action === 'approve') {
           await snapshotExisting(handle, hop)
           await saveState(handle, {
@@ -452,10 +670,17 @@ export async function executeRun(opts: {
             currentHop: hop.index + 1,
             gate: undefined
           })
+          const nextHop = plan.hops[hop.index + 1]
+          opts.io.print(
+            nextHop
+              ? `Approved. Continuing to hop ${nextHop.index + 1}/${plan.hops.length} (${nextHop.role})…`
+              : 'Approved. Completing the run…'
+          )
           break
         }
 
         await saveState(handle, { status: 'running', gate: undefined })
+        opts.io.print(`Re-running hop ${hop.index + 1} with your note…`)
         if (hop.autonomy === 'challenge' || (sourceHop.autonomy === 'strict' && !manifestResult.manifest)) {
           await rm(join(wt.path, '.chox-run', 'challenge-notes.md'), { force: true })
         }
@@ -466,15 +691,19 @@ export async function executeRun(opts: {
           before,
           ...(manifestResult.manifest ? { manifest: manifestResult.manifest } : {}),
           prompt: `${hop.prompt}\n\n## User redirect note\n${outcome.note}`,
-          io: opts.io
+          io: opts.io,
+          interaction,
+          runtimeVersion: version,
+          totalHops: plan.hops.length
         })
       }
     }
-    const final = await finishRun(handle, wt, 'completed', opts.io)
+    const final = await finishRun(handle, wt, 'completed', opts.io, plan)
     eventsClosed = true
     return final
   } catch (error) {
     if (error instanceof RunInterruptedError) {
+      opts.io.release?.()
       if (handle) {
         await handle.events.close()
         eventsClosed = true
@@ -483,13 +712,16 @@ export async function executeRun(opts: {
     }
     if (handle && wt) {
       try {
-        await saveState(handle, { status: 'failed' })
-        await teardownWorktree(wt, { commitMessage: `chox: preserve failed run ${handle.state.runId}` })
-        handle.events.append('run:end', { status: 'failed' })
-        await handle.events.close()
+        const result = await finishRun(
+          handle,
+          wt,
+          'failed',
+          opts.io,
+          activePlan,
+          error instanceof Error ? error.message : String(error)
+        )
         eventsClosed = true
-        opts.io.print(`Run failed: ${String(error)}`)
-        return { status: 'failed', runId: handle.state.runId, branch: wt.branch }
+        return result
       } catch {
         // Fall through to the original error; terminal orphan sweep preserves work later.
       }

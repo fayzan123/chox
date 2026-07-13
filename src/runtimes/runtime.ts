@@ -15,16 +15,26 @@ export interface RuntimeProbe {
   problem?: string
 }
 
+export interface TokenUsage {
+  inputTokens?: number
+  outputTokens?: number
+  cachedInputTokens?: number
+  totalTokens?: number
+}
+
 export type RuntimeEvent =
   | { kind: 'message', text: string }
   | { kind: 'command', command: string }
+  | { kind: 'session', model: string }
+  | ({ kind: 'usage' } & TokenUsage)
   | { kind: 'raw', line: string }
 
 export interface AgentRuntime {
   id: string
   supportsSubagents: boolean
   preflight(): Promise<RuntimeProbe>
-  spawnHeadless(invocation: string, opts: RunOpts): ChildProcess
+  spawnInteractive(invocation: string, opts: RunOpts & { model?: string }): ChildProcess
+  spawnHeadless(invocation: string, opts: RunOpts & { model?: string }): ChildProcess
   normalizeEvents(stdout: NodeJS.ReadableStream): AsyncIterable<RuntimeEvent>
 }
 

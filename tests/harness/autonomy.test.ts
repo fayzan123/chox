@@ -24,6 +24,7 @@ function hop(overrides: Partial<CompiledHop> = {}): CompiledHop {
     prompt: 'implement',
     produces: [],
     gated: true,
+    interaction: 'headless',
     ...overrides
   }
 }
@@ -179,6 +180,47 @@ test('manifest paths with Windows separators match normalized Git paths', async 
     },
     events
   })
+  expect(result.deviations).toEqual([])
+  await events.close()
+})
+
+test('a file committed during a hop remains visible in its mechanical footprint', async () => {
+  const { root, repo } = await setupRepo()
+  const before = await snapshotFootprint(repo)
+  await writeFile(join(repo, 'src', 'committed.ts'), 'committed during hop\n')
+  await git(repo, 'add', 'src/committed.ts')
+  await git(repo, 'commit', '-m', 'agent commit')
+  const events = await writer(root)
+  const result = await checkAutonomy({
+    hop: hop(),
+    worktree: repo,
+    before,
+    manifest: { files: { create: [], modify: [], delete: [] }, commands: [] },
+    events
+  })
+  expect(result.footprint).toContainEqual({ path: 'src/committed.ts', operation: 'create' })
+  expect(result.deviations).toContainEqual(expect.objectContaining({
+    kind: 'out-of-manifest-file',
+    detail: expect.stringContaining('src/committed.ts')
+  }))
+  await events.close()
+})
+
+test('committing unchanged pre-hop dirt does not reattribute it to the current hop', async () => {
+  const { root, repo } = await setupRepo()
+  await writeFile(join(repo, 'prior-hop.txt'), 'already present before this hop\n')
+  const before = await snapshotFootprint(repo)
+  await git(repo, 'add', 'prior-hop.txt')
+  await git(repo, 'commit', '-m', 'commit prior hop output')
+  const events = await writer(root)
+  const result = await checkAutonomy({
+    hop: hop(),
+    worktree: repo,
+    before,
+    manifest: { files: { create: [], modify: [], delete: [] }, commands: [] },
+    events
+  })
+  expect(result.footprint).toEqual([])
   expect(result.deviations).toEqual([])
   await events.close()
 })

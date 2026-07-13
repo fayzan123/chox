@@ -15,6 +15,7 @@ export interface RunState {
   repoRoot: string
   worktreePath: string
   branch: string
+  baseCommit?: string
   status: RunStatus
   currentHop: number
   gate?: {
@@ -38,6 +39,7 @@ export interface RunInit {
   repoRoot: string
   worktreePath: string
   branch: string
+  baseCommit?: string
 }
 
 async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
@@ -99,6 +101,7 @@ function isRunState(value: unknown): value is RunState {
     && typeof state.repoRoot === 'string'
     && typeof state.worktreePath === 'string'
     && typeof state.branch === 'string'
+    && (state.baseCommit === undefined || typeof state.baseCommit === 'string')
     && typeof state.currentHop === 'number'
     && typeof state.createdAt === 'string'
     && typeof state.updatedAt === 'string'

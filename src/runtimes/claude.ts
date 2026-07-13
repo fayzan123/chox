@@ -6,7 +6,8 @@ import {
   type AgentRuntime,
   type RunOpts,
   type RuntimeEvent,
-  type RuntimeProbe
+  type RuntimeProbe,
+  type TokenUsage
 } from './runtime.js'
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -15,7 +16,40 @@ function record(value: unknown): Record<string, unknown> | undefined {
     : undefined
 }
 
+function tokenCount(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? value
+    : undefined
+}
+
+function usageEvent(value: unknown): ({ kind: 'usage' } & TokenUsage) | undefined {
+  const usage = record(value)
+  if (!usage) return undefined
+  const inputTokens = tokenCount(usage.input_tokens)
+  const outputTokens = tokenCount(usage.output_tokens)
+  const cacheRead = tokenCount(usage.cache_read_input_tokens)
+  const cacheCreation = tokenCount(usage.cache_creation_input_tokens)
+  const cachedInputTokens = cacheRead === undefined && cacheCreation === undefined
+    ? undefined
+    : (cacheRead ?? 0) + (cacheCreation ?? 0)
+  const totalTokens = tokenCount(usage.total_tokens)
+  if (
+    inputTokens === undefined
+    && outputTokens === undefined
+    && cachedInputTokens === undefined
+    && totalTokens === undefined
+  ) return undefined
+  return {
+    kind: 'usage',
+    ...(inputTokens !== undefined ? { inputTokens } : {}),
+    ...(outputTokens !== undefined ? { outputTokens } : {}),
+    ...(cachedInputTokens !== undefined ? { cachedInputTokens } : {}),
+    ...(totalTokens !== undefined ? { totalTokens } : {})
+  }
+}
+
 async function* normalize(stdout: NodeJS.ReadableStream): AsyncIterable<RuntimeEvent> {
+  let reportedModel: string | undefined
   for await (const input of readJsonLines(stdout)) {
     const value = input.value
     if (!value) {
@@ -25,6 +59,16 @@ async function* normalize(stdout: NodeJS.ReadableStream): AsyncIterable<RuntimeE
 
     let recognized = false
     const message = record(value.message)
+    const model = typeof value.model === 'string'
+      ? value.model
+      : typeof message?.model === 'string'
+        ? message.model
+        : undefined
+    if (model && model !== reportedModel && (value.type === 'system' || value.type === 'assistant')) {
+      recognized = true
+      reportedModel = model
+      yield { kind: 'session', model }
+    }
     const content = Array.isArray(message?.content) ? message.content : []
     for (const itemValue of content) {
       const item = record(itemValue)
@@ -44,6 +88,13 @@ async function* normalize(stdout: NodeJS.ReadableStream): AsyncIterable<RuntimeE
       recognized = true
       yield { kind: 'message', text: value.result }
     }
+    if (value.type === 'result') {
+      const usage = usageEvent(value.usage)
+      if (usage) {
+        recognized = true
+        yield usage
+      }
+    }
     const delta = record(value.delta)
     if (typeof delta?.text === 'string') {
       recognized = true
@@ -61,13 +112,26 @@ class ClaudeRuntime implements AgentRuntime {
     return probeBinary('claude', 'Claude Code', 'https://docs.anthropic.com/en/docs/claude-code')
   }
 
-  spawnHeadless(invocation: string, opts: RunOpts): ChildProcess {
+  spawnInteractive(invocation: string, opts: RunOpts & { model?: string }): ChildProcess {
+    return spawn('claude', [
+      ...(opts.model !== undefined ? ['--model', opts.model] : []),
+      invocation
+    ], {
+      cwd: opts.cwd,
+      env: opts.env,
+      shell: false,
+      stdio: 'inherit'
+    })
+  }
+
+  spawnHeadless(invocation: string, opts: RunOpts & { model?: string }): ChildProcess {
     const child = spawn('claude', [
       '-p',
       '--output-format',
       'stream-json',
       '--verbose',
-      '--dangerously-skip-permissions'
+      '--dangerously-skip-permissions',
+      ...(opts.model !== undefined ? ['--model', opts.model] : [])
     ], {
       cwd: opts.cwd,
       env: opts.env,

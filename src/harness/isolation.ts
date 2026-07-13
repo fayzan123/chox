@@ -10,6 +10,7 @@ export interface Worktree {
   path: string
   branch: string
   repoRoot: string
+  baseCommit: string
 }
 
 async function pathExists(path: string): Promise<boolean> {
@@ -76,7 +77,7 @@ export async function createWorktree(opts: {
     await runGit(repoRoot, ['worktree', 'remove', '--force', path], { allowFailure: true })
     throw error
   }
-  return { path, branch, repoRoot }
+  return { path, branch, repoRoot, baseCommit: head.stdout.trim() }
 }
 
 export async function teardownWorktree(
@@ -132,7 +133,17 @@ async function inferWorktree(path: string): Promise<Worktree> {
   const common = commonResult.stdout.trim()
   const repoRoot = dirname(isAbsolute(common) ? common : resolve(path, common))
   const branchResult = await runGit(path, ['branch', '--show-current'])
-  return { path, repoRoot, branch: branchResult.stdout.trim() }
+  const baseResult = await runGit(repoRoot, [
+    'merge-base',
+    branchResult.stdout.trim(),
+    'HEAD'
+  ])
+  return {
+    path,
+    repoRoot,
+    branch: branchResult.stdout.trim(),
+    baseCommit: baseResult.stdout.trim()
+  }
 }
 
 export async function sweepOrphans(
@@ -160,7 +171,12 @@ export async function sweepOrphans(
     if (run?.state && !terminal.has(run.state.status)) continue
     try {
       const wt = run?.state
-        ? { path, branch: run.state.branch, repoRoot: run.state.repoRoot }
+        ? {
+            path,
+            branch: run.state.branch,
+            repoRoot: run.state.repoRoot,
+            baseCommit: run.state.baseCommit ?? run.state.branch
+          }
         : await inferWorktree(path)
       repositories.add(wt.repoRoot)
       await teardownWorktree(wt, { commitMessage: `chox: preserve orphaned ${slug} run` })

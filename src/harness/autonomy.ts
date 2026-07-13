@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { access, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
@@ -27,7 +26,13 @@ interface FootprintEntry {
 }
 
 export interface FootprintSnapshot {
+  head: string
   entries: Record<string, FootprintEntry>
+}
+
+export interface FootprintChange {
+  path: string
+  operation: keyof StrictManifest['files']
 }
 
 function normalizePath(path: string): string {
@@ -35,14 +40,19 @@ function normalizePath(path: string): string {
 }
 
 async function contentHash(worktree: string, path: string): Promise<string> {
-  try {
-    return createHash('sha256').update(await readFile(join(worktree, path))).digest('hex')
-  } catch {
-    return '<missing>'
-  }
+  const result = await runGit(worktree, [
+    'hash-object',
+    `--path=${path}`,
+    '--',
+    path
+  ], { allowFailure: true })
+  return result.code === 0 && result.stdout.trim() !== ''
+    ? result.stdout.trim()
+    : '<missing>'
 }
 
 export async function snapshotFootprint(worktree: string): Promise<FootprintSnapshot> {
+  const head = (await runGit(worktree, ['rev-parse', 'HEAD'])).stdout.trim()
   const result = await runGit(worktree, ['status', '--porcelain=v1', '-z', '--untracked-files=all'])
   const tokens = result.stdout.split('\0')
   const entries: Record<string, FootprintEntry> = {}
@@ -64,34 +74,119 @@ export async function snapshotFootprint(worktree: string): Promise<FootprintSnap
       index += 1
     }
   }
-  return { entries }
+  return { head, entries }
 }
 
-function sameEntry(left: FootprintEntry | undefined, right: FootprintEntry | undefined): boolean {
-  return left?.status === right?.status && left?.hash === right?.hash
+function parseNameStatus(output: string): FootprintChange[] {
+  const tokens = output.split('\0')
+  const changes = new Map<string, FootprintChange['operation']>()
+  let index = 0
+  while (index < tokens.length) {
+    const status = tokens[index++]
+    if (!status) continue
+    const kind = status[0]
+    if (kind === 'R' || kind === 'C') {
+      const source = normalizePath(tokens[index++] ?? '')
+      const destination = normalizePath(tokens[index++] ?? '')
+      if (kind === 'R' && source && !isHarnessArtifact(source)) changes.set(source, 'delete')
+      if (destination && !isHarnessArtifact(destination)) changes.set(destination, 'create')
+      continue
+    }
+    const path = normalizePath(tokens[index++] ?? '')
+    if (!path || isHarnessArtifact(path)) continue
+    changes.set(path, kind === 'A' ? 'create' : kind === 'D' ? 'delete' : 'modify')
+  }
+  return [...changes.entries()].map(([path, operation]) => ({ path, operation }))
 }
 
-function footprintDelta(
+async function committedChanges(
+  worktree: string,
+  beforeHead: string,
+  afterHead: string
+): Promise<FootprintChange[]> {
+  if (beforeHead === afterHead) return []
+  const result = await runGit(worktree, [
+    'diff',
+    '--name-status',
+    '-z',
+    '--find-renames',
+    beforeHead,
+    afterHead,
+    '--'
+  ])
+  return parseNameStatus(result.stdout)
+}
+
+async function blobAt(worktree: string, head: string, path: string): Promise<string> {
+  const result = await runGit(worktree, [
+    'ls-tree',
+    '-z',
+    head,
+    '--',
+    `:(literal)${path}`
+  ], { allowFailure: true })
+  if (result.code !== 0 || result.stdout === '') return '<missing>'
+  const metadata = result.stdout.slice(0, result.stdout.indexOf('\t'))
+  const fields = metadata.split(' ')
+  return fields[2] ?? '<missing>'
+}
+
+export async function diffFootprints(
+  worktree: string,
   before: FootprintSnapshot,
   after: FootprintSnapshot
-): Array<{ path: string, operation: keyof StrictManifest['files'] }> {
-  const paths = new Set([...Object.keys(before.entries), ...Object.keys(after.entries)])
-  const changes: Array<{ path: string, operation: keyof StrictManifest['files'] }> = []
-  for (const path of [...paths].sort()) {
+): Promise<FootprintChange[]> {
+  const dirtyPaths = new Set([...Object.keys(before.entries), ...Object.keys(after.entries)])
+  const changes = new Map<string, FootprintChange['operation']>()
+  await Promise.all([...dirtyPaths].map(async (path) => {
     const earlier = before.entries[path]
     const current = after.entries[path]
-    if (sameEntry(earlier, current)) continue
-    if (!current) {
-      changes.push({ path, operation: earlier?.status === '??' || earlier?.status.includes('A') ? 'delete' : 'modify' })
-    } else if (current.status === '??' || (!earlier && current.status.includes('A'))) {
-      changes.push({ path, operation: 'create' })
-    } else if (current.status.includes('D')) {
-      changes.push({ path, operation: 'delete' })
-    } else {
-      changes.push({ path, operation: 'modify' })
+    const earlierHash = earlier?.hash ?? await blobAt(worktree, before.head, path)
+    const currentHash = current?.hash ?? await blobAt(worktree, after.head, path)
+    if (earlierHash === currentHash) {
+      if (!earlier && current) changes.set(path, 'modify')
+      else if (earlier && current && earlier.status !== current.status) changes.set(path, 'modify')
+      return
     }
+    changes.set(
+      path,
+      earlierHash === '<missing>' ? 'create' : currentHash === '<missing>' ? 'delete' : 'modify'
+    )
+  }))
+  for (const change of await committedChanges(worktree, before.head, after.head)) {
+    if (!dirtyPaths.has(change.path)) changes.set(change.path, change.operation)
   }
-  return changes
+  return [...changes.entries()]
+    .map(([path, operation]) => ({ path, operation }))
+    .sort((left, right) => left.path.localeCompare(right.path))
+}
+
+function isHarnessArtifact(path: string): boolean {
+  return path === '.chox-run' || path.startsWith('.chox-run/')
+}
+
+export async function diffFromBase(worktree: string, baseCommit: string): Promise<FootprintChange[]> {
+  const result = await runGit(worktree, [
+    'diff',
+    '--name-status',
+    '-z',
+    '--find-renames',
+    baseCommit,
+    '--'
+  ])
+  const changes = new Map(parseNameStatus(result.stdout).map((change) => [
+    change.path,
+    change.operation
+  ]))
+
+  const untracked = await runGit(worktree, ['ls-files', '--others', '--exclude-standard', '-z'])
+  for (const rawPath of untracked.stdout.split('\0')) {
+    const path = normalizePath(rawPath)
+    if (path && !isHarnessArtifact(path)) changes.set(path, 'create')
+  }
+  return [...changes.entries()]
+    .map(([path, operation]) => ({ path, operation }))
+    .sort((left, right) => left.path.localeCompare(right.path))
 }
 
 function commandAllowed(command: string, expected: string[]): boolean {
@@ -124,10 +219,16 @@ export async function checkAutonomy(opts: {
   before: FootprintSnapshot
   manifest?: StrictManifest
   events: RunEventWriter
-}): Promise<{ deviations: Deviation[], blocking: boolean, degradedToChallenge: boolean }> {
+}): Promise<{
+  deviations: Deviation[]
+  blocking: boolean
+  degradedToChallenge: boolean
+  footprint: FootprintChange[]
+}> {
   const deviations: Deviation[] = []
   const degradedToChallenge = opts.hop.autonomy === 'strict' && opts.manifest === undefined
   const after = await snapshotFootprint(opts.worktree)
+  const footprint = await diffFootprints(opts.worktree, opts.before, after)
 
   if (opts.manifest && (opts.hop.autonomy === 'strict' || opts.hop.autonomy === 'autonomous')) {
     const allowed = {
@@ -135,7 +236,7 @@ export async function checkAutonomy(opts: {
       modify: new Set(opts.manifest.files.modify.map(normalizePath)),
       delete: new Set(opts.manifest.files.delete.map(normalizePath))
     }
-    for (const change of footprintDelta(opts.before, after)) {
+    for (const change of footprint) {
       if (!allowed[change.operation].has(change.path)) {
         deviations.push({
           kind: 'out-of-manifest-file',
@@ -184,5 +285,5 @@ export async function checkAutonomy(opts: {
   }
   const blocking = opts.hop.autonomy !== 'autonomous'
     && deviations.some((deviation) => !deviation.advisory)
-  return { deviations, blocking, degradedToChallenge }
+  return { deviations, blocking, degradedToChallenge, footprint }
 }

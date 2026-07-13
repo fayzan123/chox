@@ -119,12 +119,6 @@ async function runCommand(args: string[], ctx: CliContext): Promise<number> {
     unattended: flags.unattended,
     ...(resume ? { resume } : {})
   })
-  if (result.branch) {
-    ctx.stdout(
-      `Run ${result.status}. Work is preserved on branch ${result.branch}.\n` +
-      `Review it, then merge with: git merge ${result.branch}\n`
-    )
-  }
   return result.status === 'completed' ? 0 : 1
 }
 

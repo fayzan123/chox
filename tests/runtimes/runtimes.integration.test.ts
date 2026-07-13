@@ -30,7 +30,11 @@ describe.each([
     const fake = await installFakeAgents(root)
     await setFakeAgentScript(fake.scriptPath, { stdout: [] })
 
-    const child = runtime.spawnHeadless('prompt with $HOME and "quotes"', { cwd, env: fake.env })
+    const child = runtime.spawnHeadless('prompt with $HOME and "quotes"', {
+      cwd,
+      env: fake.env,
+      model: 'model-pinned'
+    })
     const exitCode = await new Promise<number | null>((resolve, reject) => {
       child.once('error', reject)
       child.once('close', resolve)
@@ -44,6 +48,41 @@ describe.each([
     }
     expect(invocation.binary).toBe(name)
     expect(invocation.args).not.toContain('prompt with $HOME and "quotes"')
+    expect(invocation.args).toContain('--model')
+    expect(invocation.args).toContain('model-pinned')
+  })
+
+  test('opens an inherited-stdio native session with a positional prompt and native approvals', async () => {
+    const root = await makeTempDir()
+    const cwd = join(root, 'interactive worktree')
+    await mkdir(cwd)
+    const fake = await installFakeAgents(root)
+    await setFakeAgentScript(fake.scriptPath, { stdout: [] })
+
+    const child = runtime.spawnInteractive('interactive prompt', {
+      cwd,
+      env: fake.env,
+      model: 'model-pinned'
+    })
+    expect(child.stdin).toBeNull()
+    expect(child.stdout).toBeNull()
+    expect(child.stderr).toBeNull()
+    const exitCode = await new Promise<number | null>((resolve, reject) => {
+      child.once('error', reject)
+      child.once('close', resolve)
+    })
+    expect(exitCode).toBe(0)
+
+    const invocation = JSON.parse(await readFile(fake.argvPath, 'utf8')) as {
+      binary: string
+      args: string[]
+    }
+    expect(invocation.binary).toBe(name)
+    expect(invocation.args).toContain('interactive prompt')
+    expect(invocation.args).toContain('model-pinned')
+    expect(invocation.args).not.toContain('--dangerously-skip-permissions')
+    expect(invocation.args).not.toContain('--ask-for-approval')
+    expect(invocation.args).not.toContain('exec')
   })
 })
 
@@ -81,6 +120,37 @@ test('Codex normalizes item events and keeps unknown JSON as raw', async () => {
     { kind: 'command', command: 'npm run build' },
     { kind: 'message', text: 'done' },
     { kind: 'raw', line: unknown }
+  ])
+})
+
+test('Claude surfaces the actual session model and aggregate result usage', async () => {
+  expect(await collect(claudeRuntime, [
+    JSON.stringify({ type: 'system', subtype: 'init', model: 'claude-sonnet-next' }),
+    JSON.stringify({
+      type: 'result',
+      usage: {
+        input_tokens: 11,
+        cache_read_input_tokens: 7,
+        cache_creation_input_tokens: 3,
+        output_tokens: 5
+      }
+    })
+  ])).toEqual([
+    { kind: 'session', model: 'claude-sonnet-next' },
+    { kind: 'usage', inputTokens: 11, cachedInputTokens: 10, outputTokens: 5 }
+  ])
+})
+
+test('Codex surfaces session metadata and turn token usage', async () => {
+  expect(await collect(codexRuntime, [
+    JSON.stringify({ type: 'thread.started', thread_id: 'thread-1', model: 'gpt-next-codex' }),
+    JSON.stringify({
+      type: 'turn.completed',
+      usage: { input_tokens: 100, cached_input_tokens: 40, output_tokens: 25 }
+    })
+  ])).toEqual([
+    { kind: 'session', model: 'gpt-next-codex' },
+    { kind: 'usage', inputTokens: 100, cachedInputTokens: 40, outputTokens: 25 }
   ])
 })
 

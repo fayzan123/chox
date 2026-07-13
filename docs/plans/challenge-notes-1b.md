@@ -8,9 +8,23 @@ updated as the post-fixture implementation exposes further decisions.
 
 ## Intentional deviations
 
-None in the pre-fixture slice. The redactor implementation follows P12 and keeps
-all writes inside its explicit fixture output directory. Potential deviations that
-need founder input are listed below rather than being guessed at in code.
+### README privacy wording follows F2/P8 rather than §7's "digests only" sentence
+
+- **Conflict:** SPEC §7 says nothing leaves the machine except digests sent through
+  the selected analysis engine. F2 says raw source content is read at confirmation
+  time, and P8 explicitly permits excerpts from the highest-weighted occurrence to
+  be sent to the user's chosen engine. Both statements cannot describe the shipped
+  behavior.
+- **Implementation:** the README states the actual F2/P8 boundary: Chox has no
+  network calls, while the locally installed vendor CLI may send derived evidence
+  and bounded highest-occurrence excerpts to its vendor. `--no-confirm` is the fully
+  deterministic, no-engine path.
+- **Why:** F2/P8 are the more specific Phase 1b instructions and the implementation
+  tests enforce that exact excerpt selection. Repeating "digests only" would make a
+  false privacy promise.
+- **Revert path:** remove excerpts from the confirmation prompt and use metadata plus
+  digests only; the literal §7 sentence could then be restored, at the cost of P8's
+  "prompt that worked" signal.
 
 ## Packet conflicts and flag-first items
 
@@ -50,6 +64,20 @@ need founder input are listed below rather than being guessed at in code.
 - **Revert:** update the packet/CI instead only if the founder intentionally restores
   native Windows support.
 
+### 4. Publish-prep fields are a flag-first item
+
+- **Packet:** P13 requires `files`, existing `bin`/`engines`, keywords, and
+  `private: true`; §8 requires the exact publish-prep fields to be flagged before
+  editing.
+- **Proposed edit:** add `files: ["dist", "src/substrate/schema.sql", "README.md",
+  "LICENSE"]` so the runtime SQL asset ships with compiled output, plus conservative
+  local-first/cross-agent CLI keywords. Keep `private: true`, the existing `bin`, and
+  Node `>=22.13` unchanged.
+- **Current action:** do not edit these fields without founder approval.
+- **Revert path:** remove the two additive fields; source development remains
+  functional, but the package tarball would omit its required schema asset unless a
+  different copy step is approved.
+
 ## Verified live facts
 
 ### F9 Codex originator
@@ -70,8 +98,7 @@ is needed. Phase 1b must treat `codex_exec` as tool-invoked rather than a manual
 bounce.
 
 Claude Code `2.1.207` and Codex CLI `0.144.1` still expose the headless flags used by
-the accepted Phase 1a.2 adapters. Exact AnalysisEngine output/schema flags will be
-re-verified when those adapters are implemented.
+the accepted Phase 1a.2 adapters and the implemented AnalysisEngine adapters.
 
 ### AnalysisEngine flags and accounting
 
@@ -114,10 +141,33 @@ testable. Revert path: amend the public interface to pass `SubstrateStore` to
 
 The first founder run passed those privacy checks, but pre-commit schema inspection
 found that a Claude top-level prompt-like field could consume the one intent
-fingerprint before canonical `message.content` was visited. No fixture was committed.
-The redactor now targets the actual Claude `message.content` / Codex
-`payload.content` field and the synthetic test asserts both exact placements; a
-second founder run is required because only the founder may regenerate this set.
+fingerprint before canonical `message.content` was visited. No fixture from that run
+was committed. The redactor was corrected to target Claude `message.content` and
+Codex `payload.content`, and its synthetic test asserts both exact placements.
+
+The founder then reran `npm run fixtures:redact`. Independent verification found 181
+Claude Code fixtures and 38 Codex fixtures (219 total), every canonical intent field
+carrying its opaque fingerprint, and no raw/dash-encoded home path, username, or
+over-long prompt content. `npm run fixtures:verify` passes against the committed set.
+
+## Post-fixture implementation clarifications
+
+- `--since` limits the query/reporting window, not what the incremental cache retains.
+  Changed files are always indexed before their watermark advances; otherwise a
+  narrow first scan would make older sessions permanently invisible to a later full
+  scan. An integration test exercises narrow-then-full recovery.
+- The additive `sources.diagnostics_json` column retains only the most recent
+  per-source parse diagnostics. Status renders aggregate counts and never file paths.
+  `openSubstrate` migrates an earlier Phase 1b development database additively, while
+  read-only health checks remain compatible before migration.
+- In `--json` mode, P14's pre-call engine/model/ceiling notice goes to stderr so stdout
+  remains one valid JSON document. Post-call usage stays in the JSON `engine` object.
+- An engine rejection is not a user dismissal and does not feed dismissal metrics;
+  it is omitted from relay findings with an explicit human summary. Confirmation or
+  drafting failures remain candidate diagnostics, never uninstallable `relay` rows.
+- Relay installation revalidates every persisted template filename, including
+  unreferenced keys, before writing. This closes the path-traversal boundary that
+  relay-hop validation alone does not cover.
 
 ## Critical areas reviewed without deviation so far
 

@@ -75,16 +75,20 @@ function validPlan(value: unknown): value is ExecutionPlan {
     && Array.isArray((value as Partial<ExecutionPlan>).hops)
 }
 
-async function persistedPlan(handle: RunHandle, fallback: ExecutionPlan): Promise<ExecutionPlan> {
+async function persistedPlan(handle: RunHandle): Promise<ExecutionPlan> {
   const path = join(handle.dir, 'plan.json')
+  let plan: ExecutionPlan
   try {
     const value = JSON.parse(await readFile(path, 'utf8')) as unknown
     if (!validPlan(value)) throw new Error('invalid plan shape')
-    return value
+    plan = value
   } catch (error) {
-    if (handle.state.createdAt === handle.state.updatedAt) return fallback
     throw new ChoxError(`The persisted execution plan is unreadable at ${path}: ${String(error)}`)
   }
+  if (plan.hops.length === 0) {
+    throw new ChoxError(`The persisted execution plan at ${path} has zero hops; refusing to resume or complete this run.`)
+  }
+  return plan
 }
 
 function stringArray(value: unknown): value is string[] {
@@ -305,7 +309,6 @@ export async function executeRun(opts: {
 
     let plan = opts.plan
     if (handle) {
-      plan = await persistedPlan(handle, opts.plan)
       if (!await exists(handle.state.worktreePath)) {
         throw new ChoxError(
           `The run's worktree is gone. Branch ${handle.state.branch} may still hold work; inspect it before starting a new run.`
@@ -316,6 +319,7 @@ export async function executeRun(opts: {
         branch: handle.state.branch,
         repoRoot: handle.state.repoRoot
       }
+      plan = await persistedPlan(handle)
     }
     await preflight(plan)
 
@@ -328,12 +332,11 @@ export async function executeRun(opts: {
           repoRoot: wt.repoRoot,
           worktreePath: wt.path,
           branch: wt.branch
-        }, opts.paths)
+        }, plan, opts.paths)
       } catch (error) {
         await teardownWorktree(wt, { commitMessage: `chox: preserve failed run ${runId}` })
         throw error
       }
-      await writeFile(join(handle.dir, 'plan.json'), `${JSON.stringify(plan, null, 2)}\n`)
       handle.events.append('run:start', {
         slug: plan.slug,
         runId,

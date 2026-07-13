@@ -81,6 +81,29 @@ updated as the post-fixture implementation exposes further decisions.
   functional, but the package tarball would omit its required schema asset unless a
   different copy step is approved.
 
+### 5. Live Claude output invalidated prompt-only JSON
+
+- **Packet:** P6 fixes Claude analysis to `-p --output-format stream-json`; response
+  parsing is defensive, and engine prompt wording is implementation discretion.
+- **Live evidence:** the founder's second acceptance run produced one non-JSON
+  confirmation, one JSON object without `confirmed`, and one valid confirmation whose
+  incomplete relay required a fallback draft that exhausted its 25-second reserve.
+- **Implementation deviation:** calls with a product-owned response schema use
+  `--output-format json --json-schema <schema>` and consume the validated
+  `structured_output` field. Schema-free calls retain the packet's stream-JSON path.
+  Confirmation requires `confirmed`, `reason`, and a complete nullable relay; fallback
+  drafting requires a complete relay. The static schemas add no transcript content or
+  other user data to P8's highest-occurrence excerpts.
+- **Why:** prompt wording did not establish a machine boundary on the founder's live
+  CLI. Claude Code 2.1.207 exposes `--json-schema`, and Anthropic's current headless
+  contract documents JSON output plus `structured_output` as the validated response
+  path. Local validation remains in place for semantic constraints such as non-empty
+  slugs and prompts.
+- **Revert:** remove `EngineOpts.jsonSchema`, the two schemas, and structured-output
+  parsing, then restore `stream-json` for those calls. This recreates the exact live
+  malformed/missing-field failures and is not recommended without a different
+  constrained-output mechanism.
+
 ## Verified live facts
 
 ### F9 Codex originator
@@ -107,12 +130,13 @@ the accepted Phase 1a.2 adapters and the implemented AnalysisEngine adapters.
 
 Verified against the same installed help parsers before implementation:
 
-- Claude analysis uses `claude -p --output-format stream-json --verbose --safe-mode
-  --no-session-persistence [--model <ANTHROPIC_MODEL>] --tools ''`. Safe mode keeps
-  project hooks/plugins/settings out of Chox analysis while preserving auth and model
-  selection; disabled persistence prevents confirmation sessions from feeding future
-  handoff scans. Analysis needs no filesystem tools, so it does not inherit the relay
-  runtime's permission-bypass flag.
+- Claude analysis uses `claude -p --output-format json --json-schema <static-schema>
+  --safe-mode --no-session-persistence [--model <ANTHROPIC_MODEL>] --tools ''` for
+  production confirmation/drafting. Schema-free calls retain `stream-json --verbose`.
+  Safe mode keeps project hooks/plugins/settings out of Chox analysis while preserving
+  auth and model selection; disabled persistence prevents confirmation sessions from
+  feeding future handoff scans. Analysis needs no filesystem tools, so it does not
+  inherit the relay runtime's permission-bypass flag.
 - Codex analysis uses `codex --sandbox read-only --ask-for-approval never exec
   --json -`. This keeps analysis read-only and supplies the prompt on stdin.
 
@@ -125,8 +149,10 @@ mistaking a shared engine's lifetime call count for one finding's budget.
 to Claude's `--model`, and retained in JSON output. Confirmation gets a 60-second
 process timeout and fallback drafting gets 25 seconds. Their maximum combined engine
 wall time is therefore 85 seconds, preserving five seconds of headroom under P7's
-strictly-under-90-second per-finding budget. Revert path: restore both calls to 30
-seconds; the founder acceptance run below demonstrates why that setting is not viable.
+strictly-under-90-second per-finding budget. A schema-valid confirmation includes a
+complete relay, so fallback drafting is now an exceptional recovery path. Revert path:
+restore both calls to 30 seconds; the founder acceptance runs below demonstrate why
+that setting is not viable.
 
 The fixed `Lens.confirm(candidates, engine)` shape lacks the store it must write to.
 No signature was changed: `handoffLens.scan(store, ...)` retains that store for the
@@ -209,6 +235,26 @@ No implementer process read either real vendor home. This observation came only 
 the founder's pasted terminal output. The resolution is the 60/25-second budget above,
 explicit `ANTHROPIC_MODEL` reporting, Claude safe mode, and non-persistent analysis.
 The live confirmation/install acceptance step must be rerun from the rebuilt commit.
+
+## Founder acceptance run: second live detect
+
+The founder reran the same command after the timeout/model fix. It scanned 225
+sessions (187 Claude Code, 38 Codex), surfaced the same three candidates, and correctly
+reported model `sonnet`. None became installable: the engine returned invalid JSON for
+one, omitted boolean `confirmed` for another, and the third reached the 25-second
+fallback-drafting timeout. Spend was visible: four calls, 6 input tokens, 30,537
+cached-input tokens, and 6,858 output tokens.
+
+The 592 Claude and 13 Codex unknown entries remain counted-and-skipped sideband
+diagnostics, not scan failures. The three-session increase is consistent with the
+earlier pre-`--no-session-persistence` acceptance run; current analysis passes the
+documented non-persistence flag. Node's SQLite experimental warning is expected for
+the packet-mandated Node 22 built-in.
+
+No implementer process read either real vendor home; all facts above came from the
+founder's pasted output. The mixed failures establish that more timeout alone is not
+the remedy. Resolution is challenge #5's validated structured-output boundary. A third
+founder run is required from the rebuilt commit.
 
 ## Critical areas reviewed without deviation so far
 

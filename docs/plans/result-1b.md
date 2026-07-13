@@ -15,7 +15,8 @@ The implementation now:
   attaches occurrence/date/repo/wall-clock evidence without counterfactual claims;
 - confirms candidates and drafts valid relays through the user's selected Claude or
   Codex CLI within the three-call budget, with highest-occurrence excerpts only,
-  visible spend, defensive JSON parsing, timeouts, and `--no-confirm` bypass;
+  visible spend, validated Claude JSON schemas, defensive fallback parsing, timeouts,
+  and `--no-confirm` bypass;
 - exposes `chox detect`, stable JSON output, source/lens/engine/since selection,
   interactive install/dismiss, collision-safe local/global relay installation, and
   substrate-aware `status` and `doctor` output;
@@ -53,7 +54,7 @@ Chox, Claude, or Codex homes.
 
 ```text
 npm run typecheck                                             pass
-npm test                                                      pass (137 tests)
+npm test                                                      pass (139 tests)
 npm run build                                                 pass
 npm run fixtures:verify                                       pass
 isolated node dist/bin/chox.js detect --json                  pass (honest empty output)
@@ -78,7 +79,8 @@ prefix.
    additive diagnostics migration, watermarks, parsing, and drift containment.
 4. `src/lenses/handoff/`, `tests/lenses/handoff.test.ts`, and
    `tests/lenses/confirm.integration.test.ts` for deterministic evidence, weighting,
-   recurrence floors, originator exclusion, and excerpt selection.
+   recurrence floors, originator exclusion, excerpt selection, and the confirmation
+   response schema.
 5. `tests/cli/detect.integration.test.ts` for the full CLI surface, spend/no-engine
    behavior, `--since` cache safety, install/dismiss state, collisions, and the
    three-repo confirmed-relay rehearsal.
@@ -91,10 +93,12 @@ prefix.
   22/24 GitHub Actions matrix. Every matrix command passes locally, but remote CI was
   not triggered from this implementation session.
 - Rerun `ANTHROPIC_MODEL=sonnet node dist/bin/chox.js detect --engine claude` against
-  the rebuilt commit. The first founder run scanned 222 sessions and surfaced three
-  candidates, but all hit the former 30-second timeout. Confirmation now gets 60
-  seconds, the selected model is surfaced, and Claude analysis is safe-mode and
-  non-persistent. The implementer intentionally never read the founder's real homes.
+  the rebuilt commit. The first founder run found three candidates but timed out at 30
+  seconds. The second reached all three responses, then exposed malformed/missing
+  fields and a 25-second fallback-draft timeout. Claude confirmation and drafting now
+  use validated JSON schemas, the selected model is surfaced, and analysis is
+  safe-mode and non-persistent. The implementer intentionally never read the
+  founder's real homes.
 - Choose an engine, review its announced spend, install the confirmed finding, and
   record the cross-agent demo. Real confirmation/drafting is covered by fake binaries;
   only the single isolated F9 originator probe invoked a live Codex CLI.

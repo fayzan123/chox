@@ -51,6 +51,36 @@ describe('analysis engines', () => {
     ])
   })
 
+  test('Claude requests and returns validated structured output when given a schema', async () => {
+    const root = await makeTempDir()
+    const fake = await installFakeAgents(root)
+    await setFakeAgentScript(fake.scriptPath, {
+      stdout: [{
+        type: 'result',
+        structured_output: { confirmed: false, reason: 'Coincidence', relay: null },
+        usage: { input_tokens: 8, output_tokens: 2 }
+      }]
+    })
+    const schema = {
+      type: 'object',
+      properties: { confirmed: { type: 'boolean' } },
+      required: ['confirmed']
+    }
+    const engine = createClaudeEngine(fake.env)
+
+    await expect(engine.analyze('candidate', { jsonSchema: schema })).resolves.toEqual({
+      confirmed: false,
+      reason: 'Coincidence',
+      relay: null
+    })
+    expect(engine.stats().usage).toEqual({ inputTokens: 8, outputTokens: 2 })
+    const invocation = JSON.parse(await readFile(fake.argvPath, 'utf8')) as { args: string[] }
+    expect(invocation.args).toContain('--json-schema')
+    expect(invocation.args).toContain(JSON.stringify(schema))
+    expect(invocation.args.slice(invocation.args.indexOf('--output-format'), invocation.args.indexOf('--output-format') + 2))
+      .toEqual(['--output-format', 'json'])
+  })
+
   test('Codex parses agent JSON and reports emitted usage', async () => {
     const root = await makeTempDir()
     const fake = await installFakeAgents(root)

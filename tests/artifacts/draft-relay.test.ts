@@ -34,6 +34,7 @@ class FakeEngine implements AnalysisEngine {
   calls = 0
   prompts: string[] = []
   timeouts: Array<number | undefined> = []
+  schemas: Array<Record<string, unknown> | undefined> = []
   response: unknown
 
   constructor(response: unknown) {
@@ -44,6 +45,7 @@ class FakeEngine implements AnalysisEngine {
     this.calls += 1
     this.prompts.push(prompt)
     this.timeouts.push(opts.timeoutMs)
+    this.schemas.push(opts.jsonSchema)
     return this.response
   }
 
@@ -85,6 +87,11 @@ test('drafting can use one fallback call and rejects a budget overrun cleanly', 
   expect(engine.calls).toBe(1)
   expect(engine.timeouts).toEqual([25_000])
   expect(engine.prompts[0]).not.toContain('/repo')
+  expect(engine.schemas[0]).toMatchObject({
+    type: 'object',
+    required: ['slug', 'hops']
+  })
+  expect(JSON.stringify(engine.schemas[0])).toContain('"prompt"')
 
   const overBudget = new FakeEngine(draft)
   const budgetSpent = finding(null)

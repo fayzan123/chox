@@ -4,6 +4,42 @@ import type { SubstrateStore } from '../../substrate/store.js'
 import type { Candidate, Finding } from '../lens.js'
 
 const confirmationTimeoutMs = 60_000
+const confirmationJsonSchema: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    confirmed: { type: 'boolean' },
+    reason: { type: 'string' },
+    relay: {
+      anyOf: [
+        {
+          type: 'object',
+          properties: {
+            slug: { type: 'string' },
+            hops: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  runtime: { type: 'string', enum: ['claude', 'codex'] },
+                  role: { type: 'string' },
+                  autonomy: { type: 'string', enum: ['strict', 'challenge', 'autonomous'] },
+                  prompt: { type: 'string' }
+                },
+                required: ['runtime', 'role', 'autonomy', 'prompt'],
+                additionalProperties: false
+              }
+            }
+          },
+          required: ['slug', 'hops'],
+          additionalProperties: false
+        },
+        { type: 'null' }
+      ]
+    }
+  },
+  required: ['confirmed', 'reason', 'relay'],
+  additionalProperties: false
+}
 
 export interface ConfirmationFailure {
   candidateId: string
@@ -70,6 +106,7 @@ function confirmationPrompt(candidate: Candidate, excerpts: unknown): string {
     'If confirmed, draft a concise relay with one hop per chain entry.',
     'Each hop needs runtime (claude|codex), role, autonomy, and prompt.',
     'Plan prompts must demand a structured breakdown and manifest; implementation prompts must demand challenge notes.',
+    'If the candidate is not confirmed, set relay to null.',
     'Return JSON only: {"confirmed":boolean,"reason":string,"relay":{"slug":string,"hops":[...]}}.',
     '',
     `Candidate: ${JSON.stringify(safeCandidate(candidate))}`,
@@ -113,7 +150,8 @@ export async function confirmHandoffCandidates(opts: {
     try {
       const excerpts = await highestWeightedExcerpts(candidate)
       const response = await opts.engine.analyze(confirmationPrompt(candidate, excerpts), {
-        timeoutMs: confirmationTimeoutMs
+        timeoutMs: confirmationTimeoutMs,
+        jsonSchema: confirmationJsonSchema
       })
       const calls = opts.engine.stats().calls - callsBefore
       if (calls > maxCalls) throw new Error(`engine call budget exceeded (${calls}/${maxCalls})`)

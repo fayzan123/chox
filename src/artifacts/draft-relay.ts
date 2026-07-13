@@ -9,6 +9,28 @@ import { slugify } from '../slugify.js'
 import type { SubstrateStore } from '../substrate/store.js'
 
 const draftingTimeoutMs = 25_000
+const relayDraftJsonSchema: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    slug: { type: 'string' },
+    hops: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          runtime: { type: 'string', enum: ['claude', 'codex'] },
+          role: { type: 'string' },
+          autonomy: { type: 'string', enum: ['strict', 'challenge', 'autonomous'] },
+          prompt: { type: 'string' }
+        },
+        required: ['runtime', 'role', 'autonomy', 'prompt'],
+        additionalProperties: false
+      }
+    }
+  },
+  required: ['slug', 'hops'],
+  additionalProperties: false
+}
 
 export interface DraftedRelay {
   slug: string
@@ -132,7 +154,10 @@ export async function draftRelay(
     if (finding.engineCalls >= 3) {
       throw new Error(`relay drafting exceeded the engine call budget (${finding.engineCalls}/3)`)
     }
-    parsed = parseDraft(await engine.analyze(draftPrompt(finding), { timeoutMs: draftingTimeoutMs }))
+    parsed = parseDraft(await engine.analyze(draftPrompt(finding), {
+      timeoutMs: draftingTimeoutMs,
+      jsonSchema: relayDraftJsonSchema
+    }))
   }
   const calls = engine.stats().calls - before
   const findingCalls = finding.engineCalls + calls

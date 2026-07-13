@@ -5,6 +5,7 @@ import { runCommand } from '../system/command.js'
 
 export interface EngineOpts {
   timeoutMs?: number
+  jsonSchema?: Record<string, unknown>
 }
 
 export interface EngineUsage {

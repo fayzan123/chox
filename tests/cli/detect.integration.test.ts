@@ -120,7 +120,8 @@ async function detectionFixture() {
   await setFakeAgentScript(fake.scriptPath, {
     stdout: [{
       type: 'result',
-      result: JSON.stringify(engineRelay),
+      subtype: 'success',
+      structured_output: engineRelay,
       usage: { input_tokens: 100, output_tokens: 20 }
     }]
   })
@@ -192,7 +193,8 @@ test('an engine-rejected candidate is not mislabeled as unconfirmed', async () =
   await setFakeAgentScript(fixture.fake.scriptPath, {
     stdout: [{
       type: 'result',
-      result: JSON.stringify({ confirmed: false }),
+      subtype: 'success',
+      structured_output: { confirmed: false, reason: 'Temporal coincidence', relay: null },
       usage: { input_tokens: 40, output_tokens: 5 }
     }]
   })
@@ -350,7 +352,7 @@ test('demo-gate rehearsal confirms and validates a relay from three shared repos
   }
   const fake = await installFakeAgents(root)
   await setFakeAgentScript(fake.scriptPath, {
-    stdout: [{ type: 'result', result: JSON.stringify(engineRelay) }]
+    stdout: [{ type: 'result', subtype: 'success', structured_output: engineRelay }]
   })
   const output = context({
     cwd,

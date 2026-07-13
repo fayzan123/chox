@@ -18,10 +18,12 @@ class CapturingEngine implements AnalysisEngine {
   readonly id = 'claude'
   calls = 0
   timeouts: Array<number | undefined> = []
+  schemas: Array<Record<string, unknown> | undefined> = []
 
   async analyze(_prompt: string, opts: EngineOpts = {}): Promise<unknown> {
     this.calls += 1
     this.timeouts.push(opts.timeoutMs)
+    this.schemas.push(opts.jsonSchema)
     return {
       confirmed: true,
       reason: 'Repeated handoff',
@@ -133,5 +135,39 @@ test('confirmation allows more than 30 seconds while reserving the drafting budg
 
   await confirmHandoffCandidates({ store, candidates: [candidate], engine })
   expect(engine.timeouts).toEqual([60_000])
+  store.close()
+})
+
+test('confirmation requires a validated response with a complete relay draft', async () => {
+  const root = await makeTempDir()
+  const store = openSubstrate(resolvePaths({ CHOX_HOME: join(root, 'chox-home') }))
+  const candidate: Candidate = {
+    id: 'handoff-schema',
+    lens: 'handoff',
+    pattern: 'claude-code>codex',
+    chain: ['claude-code', 'codex'],
+    surfaced: true,
+    occurrences: [],
+    evidence: {
+      occurrenceCount: 3,
+      sessionCount: 6,
+      dates: ['2026-01-01'],
+      repos: ['/redacted/repo'],
+      totalMinutes: 30,
+      medianMinutes: 10
+    }
+  }
+  const engine = new CapturingEngine()
+
+  const outcome = await confirmHandoffCandidates({ store, candidates: [candidate], engine })
+
+  expect(outcome.failures).toEqual([])
+  expect(engine.schemas).toHaveLength(1)
+  expect(engine.schemas[0]).toMatchObject({
+    type: 'object',
+    required: ['confirmed', 'reason', 'relay']
+  })
+  expect(JSON.stringify(engine.schemas[0])).toContain('"hops"')
+  expect(JSON.stringify(engine.schemas[0])).toContain('"autonomy"')
   store.close()
 })

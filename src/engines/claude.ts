@@ -24,10 +24,13 @@ export function createClaudeEngine(env: NodeJS.ProcessEnv = process.env): Analys
     ...(model ? { model } : {}),
     async analyze(prompt, opts = {}) {
       calls += 1
+      const outputFormat = opts.jsonSchema ? 'json' : 'stream-json'
       const result = await runEngineProcess({
         binary: 'claude',
         args: [
-          '-p', '--output-format', 'stream-json', '--verbose',
+          '-p', '--output-format', outputFormat,
+          ...(outputFormat === 'stream-json' ? ['--verbose'] : []),
+          ...(opts.jsonSchema ? ['--json-schema', JSON.stringify(opts.jsonSchema)] : []),
           '--safe-mode', '--no-session-persistence',
           ...(model ? ['--model', model] : []),
           '--tools', ''
@@ -41,15 +44,30 @@ export function createClaudeEngine(env: NodeJS.ProcessEnv = process.env): Analys
         throw new Error(`Claude analysis failed (exit ${result.code}): ${result.stderr.trim() || 'no detail'}`)
       }
       const messages: string[] = []
-      for (const line of result.stdout.split(/\r?\n/)) {
-        if (line.trim() === '') continue
-        let value: unknown
+      const values: unknown[] = []
+      const stdout = result.stdout.trim()
+      if (stdout !== '') {
         try {
-          value = JSON.parse(line) as unknown
+          values.push(JSON.parse(stdout) as unknown)
         } catch {
-          continue
+          for (const line of result.stdout.split(/\r?\n/)) {
+            if (line.trim() === '') continue
+            try {
+              values.push(JSON.parse(line) as unknown)
+            } catch {
+              // Ignore non-protocol output and use only validated message records.
+            }
+          }
         }
+      }
+      let hasStructuredOutput = false
+      let structuredOutput: unknown
+      for (const value of values) {
         if (!isRecord(value)) continue
+        if (Object.hasOwn(value, 'structured_output')) {
+          hasStructuredOutput = true
+          structuredOutput = value.structured_output
+        }
         if (value.type === 'result' && typeof value.result === 'string') messages.push(value.result)
         const message = isRecord(value.message) ? value.message : undefined
         if (Array.isArray(message?.content)) {
@@ -75,6 +93,7 @@ export function createClaudeEngine(env: NodeJS.ProcessEnv = process.env): Analys
           addUsage(usage, next)
         }
       }
+      if (hasStructuredOutput) return structuredOutput
       return parseEngineJson(messages)
     },
     stats(): EngineStats {

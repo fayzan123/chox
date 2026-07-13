@@ -152,6 +152,9 @@ The founder then reran `npm run fixtures:redact`. Independent verification found
 Claude Code fixtures and 38 Codex fixtures (219 total), every canonical intent field
 carrying its opaque fingerprint, and no raw/dash-encoded home path, username, or
 over-long prompt content. `npm run fixtures:verify` passes against the committed set.
+An engine-free integration test loads that entire corpus through the public source
+and substrate interfaces and confirms that the deterministic handoff lens surfaces
+at least one cross-agent candidate.
 
 ## Post-fixture implementation clarifications
 

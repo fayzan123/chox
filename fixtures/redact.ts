@@ -135,6 +135,7 @@ interface RedactionContext {
 interface SanitizeState {
   role: 'user' | 'assistant' | undefined
   intent: string | undefined
+  intentCanonicalOnly: boolean
   intentWritten: boolean
 }
 
@@ -244,16 +245,32 @@ function recordRole(value: Record<string, unknown>): 'user' | 'assistant' | unde
   return undefined
 }
 
-function collectMessageText(value: unknown, withinContent = false): string[] {
-  if (typeof value === 'string') return withinContent ? [value] : []
+function collectStrings(value: unknown): string[] {
+  if (typeof value === 'string') return [value]
   if (Array.isArray(value)) {
-    return value.flatMap((item) => collectMessageText(item, withinContent))
+    return value.flatMap(collectStrings)
+  }
+  if (!isRecord(value)) return []
+  return Object.values(value).flatMap(collectStrings)
+}
+
+function canonicalMessageText(value: Record<string, unknown>): string[] {
+  const message = isRecord(value.message) ? value.message : undefined
+  const payload = isRecord(value.payload) ? value.payload : undefined
+  return [message?.content, payload?.content, value.content]
+    .flatMap((content) => collectStrings(content))
+}
+
+function collectMessageText(value: unknown, withinText = false): string[] {
+  if (typeof value === 'string') return withinText ? [value] : []
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectMessageText(item, withinText))
   }
   if (!isRecord(value)) return []
 
   const text: string[] = []
   for (const [key, child] of Object.entries(value)) {
-    const nextWithin = withinContent || key === 'content' || key === 'text' || key === 'prompt'
+    const nextWithin = withinText || textKeyPattern.test(key)
     text.push(...collectMessageText(child, nextWithin))
   }
   return text
@@ -292,11 +309,22 @@ function sanitizedKey(key: string, context: RedactionContext): string {
   return mapped
 }
 
-function sensitivePlaceholder(key: string, state: SanitizeState): string {
+function isCanonicalMessageContent(path: string[]): boolean {
+  const key = path.at(-1)
+  if (key === 'content') {
+    return path.length === 1 || path.includes('message') || path.includes('payload')
+  }
+  return key === 'text'
+    && path.includes('content')
+    && (path.includes('message') || path.includes('payload'))
+}
+
+function sensitivePlaceholder(key: string, path: string[], state: SanitizeState): string {
   if (/command/i.test(key)) return '<redacted:command>'
   if (/instruction|system/i.test(key)) return '<redacted:instructions>'
   if (state.role === 'user') {
-    if (state.intent !== undefined && !state.intentWritten) {
+    const isIntentTarget = isCanonicalMessageContent(path) || !state.intentCanonicalOnly
+    if (state.intent !== undefined && !state.intentWritten && isIntentTarget) {
       state.intentWritten = true
       return state.intent
     }
@@ -307,17 +335,18 @@ function sensitivePlaceholder(key: string, state: SanitizeState): string {
 }
 
 function sanitizeString(
-  key: string,
+  path: string[],
   value: string,
   state: SanitizeState,
   context: RedactionContext
 ): string {
+  const key = path.at(-1) ?? ''
   if (key === 'timestamp' && !Number.isNaN(Date.parse(value))) return value
   if (pathKeyPattern.test(key) || /^(?:[A-Za-z]:[\\/]|[\\/~])/.test(value)) {
     return mapPath(value, context)
   }
   if (idKeyPattern.test(key)) return mapId(value, context)
-  if (textKeyPattern.test(key)) return sensitivePlaceholder(key, state)
+  if (textKeyPattern.test(key)) return sensitivePlaceholder(key, path, state)
   const lowered = value.toLocaleLowerCase('en-US')
   if (
     safeValueKeys.has(key)
@@ -330,20 +359,25 @@ function sanitizeString(
 
 function sanitizeValue(
   value: unknown,
-  key: string,
+  path: string[],
   state: SanitizeState,
   context: RedactionContext
 ): unknown {
-  if (typeof value === 'string') return sanitizeString(key, value, state, context)
+  if (typeof value === 'string') return sanitizeString(path, value, state, context)
   if (typeof value === 'number' || typeof value === 'boolean' || value === null) return value
   if (Array.isArray(value)) {
-    return value.map((item) => sanitizeValue(item, key, state, context))
+    return value.map((item) => sanitizeValue(item, path, state, context))
   }
   if (!isRecord(value)) return null
 
   const output: Record<string, unknown> = {}
   for (const [childKey, child] of Object.entries(value)) {
-    output[sanitizedKey(childKey, context)] = sanitizeValue(child, childKey, state, context)
+    output[sanitizedKey(childKey, context)] = sanitizeValue(
+      child,
+      [...path, childKey],
+      state,
+      context
+    )
   }
   return output
 }
@@ -366,17 +400,21 @@ function sanitizeRecord(
   context: RedactionContext
 ): unknown {
   const role = recordRole(value)
+  const canonicalText = firstIntent && role === 'user'
+    ? canonicalMessageText(value)
+    : []
   const messageText = firstIntent && role === 'user'
-    ? collectMessageText(value).join(' ')
+    ? (canonicalText.length > 0 ? canonicalText : collectMessageText(value)).join(' ')
     : ''
   const state: SanitizeState = {
     role,
     intent: firstIntent && role === 'user'
       ? intentFingerprint(messageText, context.fingerprintKey)
       : undefined,
+    intentCanonicalOnly: canonicalText.length > 0,
     intentWritten: false
   }
-  return sanitizeValue(value, '', state, context)
+  return sanitizeValue(value, [], state, context)
 }
 
 async function redactFile(
@@ -461,15 +499,15 @@ async function redactSource(
   }
 }
 
-function collectStrings(value: unknown, found: string[]): void {
+function collectFixtureStrings(value: unknown, found: string[]): void {
   if (typeof value === 'string') {
     found.push(value)
   } else if (Array.isArray(value)) {
-    for (const item of value) collectStrings(item, found)
+    for (const item of value) collectFixtureStrings(item, found)
   } else if (isRecord(value)) {
     for (const [key, child] of Object.entries(value)) {
       found.push(key)
-      collectStrings(child, found)
+      collectFixtureStrings(child, found)
     }
   }
 }
@@ -517,7 +555,7 @@ export async function verifyRedactedFixtures(opts: VerifyFixturesOptions): Promi
           violations.push(`${relativeFile}:${index + 1}: expected an object or null`)
         }
         const strings: string[] = []
-        collectStrings(value, strings)
+        collectFixtureStrings(value, strings)
         for (const string of strings) {
           if (string.length > maxFixtureStringLength) {
             violations.push(

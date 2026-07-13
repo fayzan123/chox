@@ -50,6 +50,7 @@ async function writeSyntheticHomes(root: string): Promise<{
       sessionId: 'claude-session-id',
       cwd: `${sourceHome}/Documents/GitHub/shared-repo`,
       timestamp: '2026-07-13T14:00:00.000Z',
+      prompt: openingSecret,
       message: {
         role: 'user',
         content: `${openingSecret} ${sourceHome}/Documents/GitHub/shared-repo/secret.ts\n\`\`\`ts\nconst privateCode = true\n\`\`\``
@@ -153,6 +154,27 @@ test('redacts synthetic real-shaped homes while preserving parser and similarity
 
   const claudeValues = claude.trim().split('\n').map((line) => JSON.parse(line) as unknown)
   const codexValues = codex.trim().split('\n').map((line) => JSON.parse(line) as unknown)
+  const claudeUserMessage = JSON.stringify(
+    claudeValues.find((value) => (
+      typeof value === 'object'
+      && value !== null
+      && 'type' in value
+      && value.type === 'user'
+    ))
+  )
+  const codexUserMessage = JSON.stringify(
+    codexValues.find((value) => (
+      typeof value === 'object'
+      && value !== null
+      && 'payload' in value
+      && typeof value.payload === 'object'
+      && value.payload !== null
+      && 'role' in value.payload
+      && value.payload.role === 'user'
+    ))
+  )
+  expect(claudeUserMessage).toMatch(/"message":.*<redacted:user-intent> fp/)
+  expect(codexUserMessage).toMatch(/"payload":.*<redacted:user-intent> fp/)
   const claudeFingerprints = new Set(
     collectStrings(claudeValues).flatMap((value) => value.match(/fp[a-f0-9]{10}/g) ?? [])
   )

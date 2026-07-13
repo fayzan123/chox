@@ -90,6 +90,13 @@ re-verified when those adapters are implemented.
   overlap is accepted. Synthetic tests additionally seed known prompt, command,
   instruction, code, and path sentinels and prove none survive.
 
+The first founder run passed those privacy checks, but pre-commit schema inspection
+found that a Claude top-level prompt-like field could consume the one intent
+fingerprint before canonical `message.content` was visited. No fixture was committed.
+The redactor now targets the actual Claude `message.content` / Codex
+`payload.content` field and the synthetic test asserts both exact placements; a
+second founder run is required because only the founder may regenerate this set.
+
 ## Critical areas reviewed without deviation so far
 
 - The substrate must remain a rebuildable metadata/digest cache; no raw-content SQL

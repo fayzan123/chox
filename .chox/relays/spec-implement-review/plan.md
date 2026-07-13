@@ -25,8 +25,11 @@ were none.
 
 ## Feature request
 
-Fix a resume bug in src/harness/runner.ts: if a run crashes in the window
-between createRun() and the plan.json write, `chox run <slug> --resume` loads
-an empty fallback plan and marks the run "completed" instead of "failed".
-Close the window (write plan.json before or atomically with run creation)
-and/or make persistedPlan() refuse to complete a run with zero hops. Add a test.
+<!-- Describe the task here before running this relay. Until `--task` input
+     ships, this section is edited per run. Include scope, constraints, and the
+     verification commands the manifest should list. -->
+
+(No task specified — edit this section, then re-run.)
+
+When every declared output above is written, end your final message with exactly:
+"This hop is done — exit this session (/exit or Ctrl-D) to continue the relay."

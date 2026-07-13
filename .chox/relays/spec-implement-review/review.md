@@ -7,3 +7,6 @@ notes at {{artifact:challenge-notes.md}}.
 Check correctness, regressions, tests, security, and whether every deviation is
 justified. Do not rewrite the implementation in this hop. Write a prioritized review
 with file references and a clear ship/block recommendation to {{produces}}.
+
+When every declared output above is written, end your final message with exactly:
+"This hop is done — exit this session (/exit or Ctrl-D) to continue the relay."

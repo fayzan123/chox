@@ -662,6 +662,16 @@ headless hops. Plan: `docs/plans/phase-1a2-build-packet.md`.
 every moment the terminal answers *what is happening, what did my keypress do, and
 what files changed* — and the process exits on its own.
 
+**ACCEPTED (2026-07-13).** User zero ran a real feature (`chox status`, merged from
+the relay's branch) through an interactive-mode relay: native Claude/Codex sessions
+throughout ("I was in my own developer environments the entire time"), full
+visibility, gates approved, process exited cleanly. Verdict: "worked like a charm."
+One friction recorded and fixed in the default templates: the exit-the-session
+handoff wasn't discoverable once the native TUI owned the screen — templates now
+instruct the agent to announce the exit step in its final message. Caveat: gate
+interrupt→resume was demonstrated by tests, not manually exercised in this run.
+Phase 1a is closed; Phase 1b (substrate + detection) is next.
+
 **Phase 1b — The substrate + handoff detection. (Demo gate.)**
 Substrate store + watermarks; claude-code + codex sources; fixture redactor; handoff
 lens (correlate → outcome-weight per §2.3 → engine confirm), historical-cost evidence

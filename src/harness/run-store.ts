@@ -93,7 +93,7 @@ export async function saveState(handle: RunHandle, patch: Partial<RunState>): Pr
   handle.state = next
 }
 
-function isRunState(value: unknown): value is RunState {
+export function isRunState(value: unknown): value is RunState {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
   const state = value as Partial<RunState>
   return typeof state.runId === 'string'

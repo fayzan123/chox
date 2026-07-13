@@ -28,6 +28,7 @@ test('no arguments print usage successfully', async () => {
   const output = context()
   expect(await runCli([], output.ctx)).toBe(0)
   expect(output.stdout.join('')).toContain('chox run <slug>')
+  expect(output.stdout.join('')).toContain('chox status')
 })
 
 test('--version prints the package version', async () => {
@@ -39,7 +40,9 @@ test('--version prints the package version', async () => {
 test.each([
   ['unknown command', ['future']],
   ['unknown run flag', ['run', 'demo', '--future']],
-  ['missing run slug', ['run']]
+  ['missing run slug', ['run']],
+  ['status with a positional', ['status', 'demo']],
+  ['status with a flag', ['status', '--json']]
 ])('%s exits 2 with usage guidance', async (_name, args) => {
   const output = context()
   expect(await runCli(args, output.ctx)).toBe(2)
@@ -97,4 +100,41 @@ test('doctor reports a healthy fabricated environment and writes a redacted bund
   expect(bundle).not.toContain(home)
   expect(bundle).not.toContain(home.replace(/[\\/.]/g, '-'))
   expect(output.stdout.join('')).toContain('Diagnostic bundle written')
+})
+
+test('status on an empty home exits 0 with a friendly report and creates nothing', async () => {
+  const root = await makeTempDir()
+  const choxHome = join(root, 'chox-home')
+  const output = context({ cwd: root, env: { ...process.env, CHOX_HOME: choxHome } })
+
+  expect(await runCli(['status'], output.ctx)).toBe(0)
+  const text = output.stdout.join('')
+  expect(text).toContain('No runs yet')
+  expect(text).toContain('Substrate: not initialized — ships in Phase 1b')
+  await expect(readdir(choxHome)).rejects.toThrow()
+})
+
+test('status flags resumable runs with the exact resume command', async () => {
+  const root = await makeTempDir()
+  const choxHome = join(root, 'chox-home')
+  const runDir = join(choxHome, 'runs', 'demo', 'r-1')
+  await mkdir(runDir, { recursive: true })
+  await writeFile(join(runDir, 'run.json'), JSON.stringify({
+    runId: 'r-1',
+    slug: 'demo',
+    repoRoot: root,
+    worktreePath: join(choxHome, 'worktrees', 'demo-r-1'),
+    branch: 'chox/demo/r-1',
+    status: 'awaiting-gate',
+    currentHop: 0,
+    createdAt: '2026-07-13T10:00:00.000Z',
+    updatedAt: '2026-07-13T10:00:00.000Z'
+  }))
+  await writeFile(join(runDir, 'plan.json'), JSON.stringify({ slug: 'demo', hops: [{ index: 0 }] }))
+  const output = context({ cwd: root, env: { ...process.env, CHOX_HOME: choxHome } })
+
+  expect(await runCli(['status'], output.ctx)).toBe(0)
+  const text = output.stdout.join('')
+  expect(text).toContain('demo/r-1  awaiting-gate  hop 1/1')
+  expect(text).toContain('resume: chox run demo --resume')
 })

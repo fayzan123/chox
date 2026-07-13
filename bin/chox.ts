@@ -14,10 +14,12 @@ import { createTerminalGateIO, RunInterruptedError, type GateIO } from '../src/h
 import { executeRun } from '../src/harness/runner.js'
 import { findResumableRun } from '../src/harness/run-store.js'
 import { resolvePaths } from '../src/paths.js'
+import { collectStatus, renderStatus } from '../src/status.js'
 
 const usage = `Usage:
   chox run <slug> [--dry-run] [--resume] [--unattended]
   chox doctor [--bundle]
+  chox status
   chox --version | --help
 `
 
@@ -144,6 +146,12 @@ async function doctorCommand(args: string[], ctx: CliContext): Promise<number> {
   return probes.some((probe) => !probe.ok) ? 1 : 0
 }
 
+async function statusCommand(args: string[], ctx: CliContext): Promise<number> {
+  parseArgs({ args, options: {}, allowPositionals: false, strict: true })
+  ctx.stdout(renderStatus(await collectStatus(resolvePaths(ctx.env))))
+  return 0
+}
+
 export async function runCli(args: string[], ctx: CliContext): Promise<number> {
   try {
     if (args.length === 0 || (args.length === 1 && (args[0] === '--help' || args[0] === 'help'))) {
@@ -157,6 +165,7 @@ export async function runCli(args: string[], ctx: CliContext): Promise<number> {
     const [command, ...rest] = args
     if (command === 'run') return await runCommand(rest, ctx)
     if (command === 'doctor') return await doctorCommand(rest, ctx)
+    if (command === 'status') return await statusCommand(rest, ctx)
     throw new ChoxUsageError(`Unknown command or flag: ${String(command)}`)
   } catch (error) {
     if (error instanceof RunInterruptedError) {

@@ -235,26 +235,32 @@ This project is built *using* the workflow it productizes, deliberately:
 | **4 — Repetition, full rebuild** | Generation-first structured skills (gates, parallel, multi-runtime) | A generated skill still in use a week later |
 | **5 — Plurality + app** | Third source (Cursor vs OpenClaw by demand), local app with loopback-only server | Full loop works on a machine whose only agent isn't Claude Code |
 
-**Current status (2026-07-13):**
+**Current status (2026-07-13, end of day):**
 
-- Phase 1a is implemented and reviewed: 63 tests across 12 suites, zero production
-  dependencies, all manifest commands pass locally. The PM review accepted all nine
-  challenge-note deviations.
-- **Platform decision (2026-07-13): macOS + Linux only for now; WSL counts.** The
-  first-ever CI run was Ubuntu-green / Windows-red, failing on Windows `.cmd`
-  spawning (Node's `spawn` with `shell: false` refuses `.cmd` shims — which is what
-  npm-installed `claude`/`codex` are on Windows). Rather than pay a recurring
-  Windows tax on every phase with zero Windows users, native Windows is deferred
-  until real external demand (Phase 5 at the latest). The finding is recorded in
-  CORRECTNESS.md C8; the CI matrix is now Ubuntu + macOS; Windows-safe code hygiene
-  is retained. Notably, this bug class was predicted by the correctness ledger and
-  caught on the first CI run — the day-one matrix did its job.
-- **Open item 2 — the real acceptance run.** No live-agent relay has been executed
-  yet (tests use fakes by design). Phase 1a's gate closes when user zero runs a
-  real feature through `chox run` and prefers it to manual bouncing.
-- **npm:** the handle is deliberately unclaimed. Decision on record: no placeholder
-  publish; the package stays `private: true` until Phase 1b, and a scoped fallback
-  is acceptable if `chox` is taken by then.
+- **Phase 1a is ACCEPTED and closed** (recorded in SPEC.md §8). It shipped in two
+  iterations: the original relay runtime, then 1a.2 from first-run feedback —
+  interactive-by-default hops (native Claude/Codex sessions in the worktree; Chox
+  conducts between them), per-hop model pinning always surfaced, full run/gate
+  visibility, and the completion-hang fix. User zero's verdict on the final
+  acceptance run: "worked like a charm — I was in my own developer environments
+  the entire time."
+- **Two features on main were built by the relay itself** (the product building
+  the product): the resume crash-window fix and `chox status`. 91 tests, zero
+  production dependencies, CI green (Ubuntu + macOS × Node 22/24).
+- **Platform decision:** macOS + Linux only (WSL counts); native Windows deferred
+  until external demand — the first Windows CI run confirmed the ledger-predicted
+  `.cmd` spawn bug class; details in CORRECTNESS.md C8. Windows-safe hygiene
+  retained in code.
+- **Next: Phase 1b (the demo gate).** The build packet is written at
+  `docs/plans/phase-1b-build-packet.md` — substrate + sources + fixture redactor
+  + handoff lens + `chox detect`/`install` + README/publish prep. Its acceptance
+  is the north-star moment: `chox detect` independently finding the loop user
+  zero hand-authored in 1a. npm handle gets verified at publish (decision on
+  record: no placeholder publish; scoped fallback acceptable; `private: true`
+  until the founder flips it).
+- **Queued small feature** (post-1b): `--task`/`--task-file` input with a
+  `{{task}}` template placeholder, so relay templates stop being hand-edited per
+  run.
 
 ## 10. Getting started
 

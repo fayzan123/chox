@@ -10,6 +10,7 @@ export interface ChoxPaths {
   runs: string
   worktrees: string
   relays: string
+  substrate: string
 }
 
 export function resolvePaths(env: NodeJS.ProcessEnv = process.env): ChoxPaths {
@@ -18,7 +19,8 @@ export function resolvePaths(env: NodeJS.ProcessEnv = process.env): ChoxPaths {
     home,
     runs: resolve(home, 'runs'),
     worktrees: resolve(home, 'worktrees'),
-    relays: resolve(home, 'relays')
+    relays: resolve(home, 'relays'),
+    substrate: resolve(home, 'substrate.db')
   }
 }
 

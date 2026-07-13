@@ -10,7 +10,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        # Native Windows deferred (decision 2026-07-13, SPEC.md §4 platform note).
+        # macOS is user zero's platform; Linux covers servers and WSL.
+        os: [ubuntu-latest, macos-latest]
         node: [22, 24]
     runs-on: ${{ matrix.os }}
     steps:

@@ -378,9 +378,24 @@ Two conclusions:
 | Tests | Vitest; real-FS temp dirs; fake agent binaries; fixtures generated from real local history | Filesystem behavior is tested against real filesystems, never mocks (Appendix B, ledger) |
 | Build | `tsc` only; `dist/bin/chox.js` marked executable | No bundler until proven needed |
 | Package mgr | npm + `package-lock.json` | Continuity |
-| CI | GitHub Actions: Ubuntu + Windows × Node 22, 24 | Windows quoting/paths/process-timing bugs are a known-paid-for class (Appendix B); CI enforces from day one |
+| CI | GitHub Actions: Ubuntu + macOS × Node 22, 24 (amended 2026-07-13; originally Ubuntu + Windows — see platform note below) | Cover the supported platforms; macOS is user zero's machine |
 | App surface (Phase 5) | Vite + React 19; local server bound to loopback with per-install token auth and strict CORS (§7.5) | Deferred; CLI/daemon carry Phases 1–4 |
 | License | MIT | Portfolio + adoption |
+
+**Platform support (founder decision, 2026-07-13):** supported platforms are
+**macOS and Linux — WSL counts as Linux**. Native Windows is deferred: the first
+Windows CI run confirmed the known-paid-for bug class immediately (Node's
+`spawn`/`shell:false` refuses the `.cmd` shims that npm-installed `claude`/`codex`
+are on Windows), and paying that tax on every phase serves no current user — user
+zero is on macOS and there are no external users before the Phase 1b publish.
+Consequences: `windows-latest` is out of the CI matrix (never left in as
+allowed-to-fail — perpetually red CI is worse than absent CI); the cheap Windows
+hygiene already in the codebase (argv-array spawning per ledger item 1, path
+normalization) is kept, since it costs nothing and keeps the door open; `chox
+doctor` on `win32` reports native Windows as unsupported and points to WSL.
+**Revisit trigger:** first credible external Windows demand, or Phase 5 plurality
+at the latest. Ledger items 1 and 8 are amended accordingly (see
+`docs/CORRECTNESS.md`).
 
 **Dependency budget:** production deps ≈ `croner` and little else. `package.json` is
 part of the privacy posture — every dependency is a trust cost for a tool that reads
@@ -660,7 +675,8 @@ the loop also completes with the app never opened (CLI-parity guard).
 
 - **Fresh-code correctness debt (accepted).** Ground-up code re-earns what the
   predecessor's test suite encoded. Mitigation: §6 (ledger + fresh fixtures +
-  reference repo) plus Windows CI from day one. Residual risk consciously accepted.
+  reference repo) plus two-platform CI (Ubuntu + macOS; Windows deferred per the §4
+  platform note) from day one. Residual risk consciously accepted.
 - **Gate ergonomics (top product risk).** If approving at a boundary is clunkier than
   bouncing manually, the flagship fails its own Phase 1a gate — before detection even
   exists. §2.2 is a floor, not a ceiling; the Phase 1a plan treats gate UX as a

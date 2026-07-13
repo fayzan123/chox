@@ -51,8 +51,17 @@ collision, name the occupant. `stop` must report what it actually stopped.
 
 ## C8. Timing variance
 
-Scheduler and process tests must tolerate Windows timing and path differences. CI
-runs both OS families (Ubuntu + Windows) from day one.
+Scheduler and process tests must tolerate timing and path differences across
+platforms. CI runs two OS families from day one.
+
+> **Amended 2026-07-13 (platform decision, SPEC.md §4):** supported platforms are
+> macOS + Linux (WSL counts); CI matrix is Ubuntu + macOS. Native Windows is
+> deferred until first external demand (Phase 5 at the latest). C1's argv-array
+> spawning rule and existing path-normalization hygiene are **retained** — they are
+> correct on all platforms and keep the Windows door open. The first Windows CI run
+> (2026-07-13) confirmed this ledger's predictions: `.cmd` shim spawning failed
+> exactly as C1/C8 anticipated; that finding is recorded for whenever Windows
+> support is picked up.
 
 ## C9. Worktree hygiene
 

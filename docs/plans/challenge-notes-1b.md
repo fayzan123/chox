@@ -278,8 +278,11 @@ non-challenge implementation hops a hop-specific notes artifact such as
 canonical `challenge-notes.md`. The generated prompt names the same artifact it
 declares. A public `draftRelay` → `compileRelay` regression test reproduces the exact
 three-hop live shape. Direct repair of the already-installed Chox-owned relay was
-flagged for founder approval because that generated directory is outside the
-implementation MANIFEST.
+flagged because that generated directory is outside the implementation MANIFEST; the
+founder approved the two-file repair. Its implementation output and prompt now both
+name `challenge-notes-3.md`, and
+`node dist/bin/chox.js run brainstorm-plan-implement --dry-run` passes with all three
+hops, distinct artifacts, and gates rendered. No runtime process was spawned.
 
 ## Critical areas reviewed without deviation so far
 

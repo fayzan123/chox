@@ -61,6 +61,7 @@ isolated node dist/bin/chox.js detect --json                  pass (honest empty
 isolated node dist/bin/chox.js status                         pass (substrate stats)
 isolated node dist/bin/chox.js doctor                         pass (exit 0, DB queried)
 node dist/bin/chox.js run spec-implement-review --dry-run     pass
+node dist/bin/chox.js run brainstorm-plan-implement --dry-run pass (founder relay)
 ```
 
 `npm pack` was also run with an isolated cache. Its 78-file tarball contains the
@@ -97,10 +98,11 @@ prefix.
   the founder installed `brainstorm-plan-implement`. Its first dry-run caught a
   duplicate challenge-notes artifact between an early challenge hop and the autonomous
   implementation hop. The generator now assigns the latter a hop-specific notes file;
-  repair and dry-run of the already-installed artifact remain pending founder approval.
-- After the repaired relay dry-runs, record the cross-agent demo. Real founder
-  confirmation used three visible calls; the implementer never read the founder's
-  vendor homes or invoked an additional live engine.
+  the founder approved repair of the already-installed artifact, whose three-hop
+  dry-run now passes.
+- Record the cross-agent demo using the installed relay. Real founder confirmation
+  used three visible calls; the implementer never read the founder's vendor homes or
+  invoked an additional live engine.
 - Measure exported/dismissed quality over the specified two-week window.
 - Verify the npm `chox` handle, choose the scoped fallback if necessary, then change
   `private` only as part of the founder-controlled first publish. No placeholder

@@ -1,0 +1,8 @@
+{"type":"last-prompt","field_025":"<redacted:string>","sessionId":"<redacted:string>"}
+{"type":"mode","field_061":"<redacted:string>","sessionId":"<redacted:string>"}
+{"type":"permission-mode","permissionMode":"default","sessionId":"<redacted:string>"}
+{"parentUuid":null,"isSidechain":false,"field_002":{"type":"hook_success","field_003":"<redacted:string>","field_004":"<redacted:string>","field_005":"<redacted:string>","content":"<redacted:text>","field_006":"<redacted:string>","field_007":"<redacted:string>","field_008":0,"command":"<redacted:command>","field_009":413},"type":"attachment","uuid":"id-22796","timestamp":"2026-06-21T22:07:23.654Z","userType":"external","field_010":"<redacted:string>","cwd":"/workspace/path-097","sessionId":"<redacted:string>","version":"2.1.185","gitBranch":"<redacted:gitbranch>"}
+{"type":"file-history-snapshot","field_062":"<redacted:text>","field_063":{"field_062":"<redacted:text>","field_064":{},"timestamp":"2026-06-21T22:07:31.098Z"},"field_065":false}
+{"parentUuid":"<redacted:string>","isSidechain":false,"field_011":"<redacted:user-message>","type":"user","message":{"role":"user","content":"<redacted:user-intent> fpd5f832e772 fpd283651918 fpb874aee966 fp954bffadef"},"uuid":"id-22798","timestamp":"2026-06-21T22:07:31.098Z","permissionMode":"default","field_142":{"field_143":"<redacted:string>"},"field_012":"<redacted:user-message>","userType":"external","field_010":"<redacted:string>","cwd":"/workspace/path-097","sessionId":"<redacted:string>","version":"2.1.185","gitBranch":"<redacted:gitbranch>"}
+{"type":"ai-title","field_067":"<redacted:text>","sessionId":"<redacted:string>"}
+{"type":"permission-mode","permissionMode":"default","sessionId":"<redacted:string>"}

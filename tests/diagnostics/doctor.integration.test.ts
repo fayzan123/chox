@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test } from 'vitest'
 import { buildBundle, runDoctor, type Probe } from '../../src/doctor.js'
 import { resolvePaths } from '../../src/paths.js'
 import { redact } from '../../src/redact.js'
+import { openSubstrate } from '../../src/substrate/store.js'
 import { cleanupTempDirs, makeTempDir } from '../helpers/temp.js'
 import { installFakeAgents } from '../helpers/fake-agents.js'
 
@@ -41,7 +42,41 @@ describe.sequential('doctor', () => {
     expect(probes.find(({ name }) => name === 'Codex CLI')).toMatchObject({ ok: true, critical: false })
     expect(probes.find(({ name }) => name === 'Claude sessions')).toMatchObject({ ok: true })
     expect(probes.find(({ name }) => name === 'Codex sessions')).toMatchObject({ ok: true })
-    expect(probes.find(({ name }) => name === 'Substrate')?.detail).toMatch(/Phase 1b/)
+    expect(probes.find(({ name }) => name === 'Substrate')).toMatchObject({
+      ok: true,
+      detail: expect.stringMatching(/not initialized.*chox detect/i)
+    })
+  })
+
+  test('reports an initialized substrate as readable and queryable', async () => {
+    const root = await makeTempDir()
+    const fake = await installFakeAgents(root)
+    const env = { ...fake.env, HOME: root, USERPROFILE: root, CHOX_HOME: join(root, 'chox-home') }
+    const paths = resolvePaths(env)
+    openSubstrate(paths).close()
+
+    const probes = await runDoctor({ paths, env })
+    expect(probes.find(({ name }) => name === 'Substrate')).toMatchObject({
+      ok: true,
+      critical: false,
+      detail: expect.stringMatching(/readable and queryable/i)
+    })
+  })
+
+  test('reports a corrupt substrate as a rebuildable non-critical cache', async () => {
+    const root = await makeTempDir()
+    const fake = await installFakeAgents(root)
+    const env = { ...fake.env, HOME: root, USERPROFILE: root, CHOX_HOME: join(root, 'chox-home') }
+    const paths = resolvePaths(env)
+    await mkdir(paths.home, { recursive: true })
+    await writeFile(paths.substrate, 'not sqlite')
+
+    const probes = await runDoctor({ paths, env })
+    expect(probes.find(({ name }) => name === 'Substrate')).toMatchObject({
+      ok: false,
+      critical: false,
+      detail: expect.stringMatching(/delete substrate\.db under CHOX_HOME.*rebuild.*cache/i)
+    })
   })
 
   test('an injected win32 platform is a critical failure pointing at WSL', async () => {

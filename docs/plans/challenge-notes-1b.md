@@ -36,9 +36,11 @@ updated as the post-fixture implementation exposes further decisions.
 - **Conflict:** `src/doctor.ts` owns that probe, but it is absent from both
   `create_or_replace` and `may_touch`. The contract says any file outside those
   lists must be flagged before editing.
-- **Current action:** do not touch `src/doctor.ts` during the founder fixture
-  checkpoint. Ask the founder to add it to `may_touch` or explicitly approve the
-  required edit before the post-fixture slice.
+- **Resolution:** the founder explicitly approved the out-of-MANIFEST edit on
+  2026-07-13. `src/doctor.ts` now uses the substrate's read-only health boundary:
+  missing remains informational, present databases are opened and queried, and a
+  corrupt database reports the cache rebuild action without placing raw paths in a
+  doctor bundle.
 - **Revert path if an edit is approved and later rejected:** restore the Phase 1a
   informational probe; this would knowingly leave the Phase 1b doctor acceptance
   requirement unmet.
@@ -73,7 +75,8 @@ updated as the post-fixture implementation exposes further decisions.
   "LICENSE"]` so the runtime SQL asset ships with compiled output, plus conservative
   local-first/cross-agent CLI keywords. Keep `private: true`, the existing `bin`, and
   Node `>=22.13` unchanged.
-- **Current action:** do not edit these fields without founder approval.
+- **Resolution:** the founder explicitly approved these fields on 2026-07-13. They
+  were added exactly as proposed, with `private: true` unchanged.
 - **Revert path:** remove the two additive fields; source development remains
   functional, but the package tarball would omit its required schema asset unless a
   different copy step is approved.
@@ -168,6 +171,12 @@ over-long prompt content. `npm run fixtures:verify` passes against the committed
 - Relay installation revalidates every persisted template filename, including
   unreferenced keys, before writing. This closes the path-traversal boundary that
   relay-hop validation alone does not cover.
+- `npm pack --dry-run` initially encountered pre-existing root-owned files in the
+  founder's global npm cache. No permissions or files there were changed. Re-running
+  with an isolated `/private/tmp` cache succeeded; the resulting 78-file tarball was
+  installed into another isolated directory, and its packaged CLI completed
+  `detect --no-confirm --json` with an isolated home. This verified that the included
+  `src/substrate/schema.sql` is found from compiled code.
 
 ## Critical areas reviewed without deviation so far
 

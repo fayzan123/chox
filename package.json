@@ -11,6 +11,20 @@
   "bin": {
     "chox": "dist/bin/chox.js"
   },
+  "files": [
+    "dist",
+    "src/substrate/schema.sql",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "ai-agents",
+    "cli",
+    "local-first",
+    "cross-agent",
+    "developer-tools",
+    "workflow"
+  ],
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

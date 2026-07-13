@@ -6,6 +6,7 @@ import { afterEach, expect, test } from 'vitest'
 import type { RunState } from '../../src/harness/run-store.js'
 import { resolvePaths } from '../../src/paths.js'
 import { collectStatus, renderStatus } from '../../src/status.js'
+import { openSubstrate } from '../../src/substrate/store.js'
 import { assertIsolatedPaths, cleanupTempDirs, makeTempDir } from '../helpers/temp.js'
 
 afterEach(cleanupTempDirs)
@@ -53,7 +54,8 @@ test('a missing Chox home reads as an empty status and is never created', async 
     totalRuns: 0,
     unreadableRuns: 0,
     unreadablePlans: 0,
-    worktrees: { total: 0, active: 0, orphaned: 0 }
+    worktrees: { total: 0, active: 0, orphaned: 0 },
+    substrate: { present: false }
   })
   await expect(access(home)).rejects.toThrow()
 })
@@ -128,19 +130,43 @@ test('caps the listing at ten runs while totals count everything', async () => {
   expect(report.runs[0]?.runId).toBe('r-11')
 })
 
+test('reports the latest per-source scan diagnostics without exposing file paths', async () => {
+  const root = await makeTempDir()
+  const paths = resolvePaths({ CHOX_HOME: join(root, 'chox-home') })
+  const store = openSubstrate(paths)
+  store.upsertSource({
+    id: 'claude-code',
+    kind: 'claude-code',
+    rootPath: join(root, 'private-home'),
+    lastScanAt: '2026-07-13T12:00:00.000Z',
+    diagnostics: {
+      unknownTypes: { future: 2 },
+      nullLines: 1,
+      failedFiles: [join(root, 'private-home', 'session.jsonl')]
+    }
+  })
+  store.close()
+
+  const text = renderStatus(await collectStatus(paths))
+  expect(text).toContain('Scan diagnostics: claude-code 2 unknown, 1 null, 1 file warning')
+  expect(text).not.toContain('session.jsonl')
+  expect(text).not.toContain('private-home')
+})
+
 test('renders an empty home as a friendly no-runs status', () => {
   const text = renderStatus({
     runs: [],
     totalRuns: 0,
     unreadableRuns: 0,
     unreadablePlans: 0,
-    worktrees: { total: 0, active: 0, orphaned: 0 }
+    worktrees: { total: 0, active: 0, orphaned: 0 },
+    substrate: { present: false }
   })
 
   expect(text).toBe([
     'No runs yet. Start one with: chox run <slug>',
     'Worktrees: 0 total (0 from active runs, 0 orphaned)',
-    'Substrate: not initialized — ships in Phase 1b',
+    'Substrate: not initialized — run chox detect to scan local sessions',
     ''
   ].join('\n'))
 })
@@ -164,7 +190,8 @@ test('renders runs with hop progress, resume commands, and corruption notes', ()
     totalRuns: 3,
     unreadableRuns: 1,
     unreadablePlans: 1,
-    worktrees: { total: 2, active: 1, orphaned: 1 }
+    worktrees: { total: 2, active: 1, orphaned: 1 },
+    substrate: { present: false }
   })
 
   expect(text).toBe([
@@ -175,7 +202,7 @@ test('renders runs with hop progress, resume commands, and corruption notes', ()
     '  demo/r-old  completed  hop 3/3  chox/demo/r-old  updated 2026-07-13T10:00:00.000Z',
     'Note: skipped 1 unreadable run.json file(s) and 1 unreadable plan.json file(s).',
     'Worktrees: 2 total (1 from active runs, 1 orphaned)',
-    'Substrate: not initialized — ships in Phase 1b',
+    'Substrate: not initialized — run chox detect to scan local sessions',
     ''
   ].join('\n'))
 })

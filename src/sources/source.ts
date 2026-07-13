@@ -104,10 +104,10 @@ export async function scanSessionSources(opts: {
         const parsed = await source.parse(ref)
         parsedFiles += 1
         mergeDiagnostics(diagnostics, parsed.diagnostics)
-        if (!opts.since || parsed.meta.endedAt >= opts.since) {
-          opts.store.replaceSession(source.id, ref.fileRef, parsed)
-          sessionsStored += 1
-        }
+        // Watermarks describe the cache, not a particular detect query. Always
+        // index changed files so a later wider --since window can reuse them.
+        opts.store.replaceSession(source.id, ref.fileRef, parsed)
+        sessionsStored += 1
         advanceWatermark(opts.store, source.id, ref.fileRef, ref)
       } catch {
         diagnostics.failedFiles.push(ref.fileRef)
@@ -118,7 +118,8 @@ export async function scanSessionSources(opts: {
       id: source.id,
       kind: source.id,
       rootPath: opts.homeDir,
-      lastScanAt: scannedAt
+      lastScanAt: scannedAt,
+      diagnostics
     })
     results.push({
       sourceId: source.id,

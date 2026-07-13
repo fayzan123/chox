@@ -4,7 +4,8 @@ CREATE TABLE IF NOT EXISTS sources (
   id TEXT PRIMARY KEY,
   kind TEXT NOT NULL,
   root_path TEXT NOT NULL,
-  last_scan_at TEXT
+  last_scan_at TEXT,
+  diagnostics_json TEXT
 );
 
 CREATE TABLE IF NOT EXISTS sessions (

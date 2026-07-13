@@ -1,11 +1,11 @@
-import { chmodSync, mkdirSync, readFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 
 import { ChoxError } from '../errors.js'
 import type { ChoxPaths } from '../paths.js'
-import type { ParsedSession } from '../sources/source.js'
+import type { ParsedSession, SourceDiagnostics } from '../sources/source.js'
 
 export type FindingStatus = 'suggested' | 'dismissed' | 'exported'
 
@@ -14,6 +14,7 @@ export interface StoredSource {
   kind: string
   rootPath: string
   lastScanAt?: string
+  diagnostics?: SourceDiagnostics
 }
 
 export interface StoredSession {
@@ -57,7 +58,14 @@ export interface StoredWatermark {
 export interface SubstrateStats {
   sessionsBySource: Record<string, number>
   lastScanBySource: Record<string, string | undefined>
+  diagnosticsBySource: Record<string, SourceDiagnostics>
   findingsByStatus: Record<FindingStatus, number>
+}
+
+export interface SubstrateHealth {
+  present: boolean
+  stats?: SubstrateStats
+  problem?: string
 }
 
 export interface SubstrateStore {
@@ -133,6 +141,35 @@ function parsePayload(text: string): unknown {
   }
 }
 
+function parseDiagnostics(text: string | null): SourceDiagnostics | undefined {
+  if (text === null) return undefined
+  const value = parseObject(text, 'source diagnostics')
+  if (
+    typeof value.nullLines !== 'number'
+    || !Number.isInteger(value.nullLines)
+    || value.nullLines < 0
+    || !Array.isArray(value.failedFiles)
+    || !value.failedFiles.every((item) => typeof item === 'string')
+    || typeof value.unknownTypes !== 'object'
+    || value.unknownTypes === null
+    || Array.isArray(value.unknownTypes)
+  ) throw new ChoxError('Substrate contains invalid source diagnostics. Delete the database to rebuild it.')
+  const unknownTypes = value.unknownTypes as Record<string, unknown>
+  if (!Object.values(unknownTypes).every((count) => (
+    typeof count === 'number' && Number.isInteger(count) && count >= 0
+  ))) throw new ChoxError('Substrate contains invalid source diagnostics. Delete the database to rebuild it.')
+  return {
+    unknownTypes: unknownTypes as Record<string, number>,
+    nullLines: value.nullLines,
+    failedFiles: value.failedFiles as string[]
+  }
+}
+
+function hasSourceDiagnostics(db: DatabaseSync): boolean {
+  return db.prepare('PRAGMA table_info(sources)').all()
+    .some((row) => (row as { name?: unknown }).name === 'diagnostics_json')
+}
+
 function findingStatus(value: string): FindingStatus {
   if (value === 'suggested' || value === 'dismissed' || value === 'exported') return value
   throw new ChoxError('Substrate contains an invalid finding status. Delete the database to rebuild it.')
@@ -166,32 +203,52 @@ function findingFromRow(row: FindingRow): StoredFinding {
 
 class SqliteSubstrateStore implements SubstrateStore {
   readonly #db: DatabaseSync
+  readonly #hasSourceDiagnostics: boolean
 
   constructor(db: DatabaseSync) {
     this.#db = db
+    this.#hasSourceDiagnostics = hasSourceDiagnostics(db)
   }
 
   upsertSource(source: StoredSource): void {
     this.#db.prepare(`
-      INSERT INTO sources (id, kind, root_path, last_scan_at)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO sources (id, kind, root_path, last_scan_at, diagnostics_json)
+      VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         kind = excluded.kind,
         root_path = excluded.root_path,
-        last_scan_at = excluded.last_scan_at
-    `).run(source.id, source.kind, source.rootPath, source.lastScanAt ?? null)
+        last_scan_at = COALESCE(excluded.last_scan_at, sources.last_scan_at),
+        diagnostics_json = COALESCE(excluded.diagnostics_json, sources.diagnostics_json)
+    `).run(
+      source.id,
+      source.kind,
+      source.rootPath,
+      source.lastScanAt ?? null,
+      source.diagnostics ? JSON.stringify(source.diagnostics) : null
+    )
   }
 
   listSources(): StoredSource[] {
+    const diagnostics = this.#hasSourceDiagnostics ? 'diagnostics_json' : 'NULL AS diagnostics_json'
     const rows = this.#db.prepare(`
-      SELECT id, kind, root_path, last_scan_at FROM sources ORDER BY id
-    `).all() as Array<{ id: string, kind: string, root_path: string, last_scan_at: string | null }>
-    return rows.map((row) => ({
-      id: row.id,
-      kind: row.kind,
-      rootPath: row.root_path,
-      ...(row.last_scan_at === null ? {} : { lastScanAt: row.last_scan_at })
-    }))
+      SELECT id, kind, root_path, last_scan_at, ${diagnostics} FROM sources ORDER BY id
+    `).all() as Array<{
+      id: string
+      kind: string
+      root_path: string
+      last_scan_at: string | null
+      diagnostics_json: string | null
+    }>
+    return rows.map((row) => {
+      const parsedDiagnostics = parseDiagnostics(row.diagnostics_json)
+      return {
+        id: row.id,
+        kind: row.kind,
+        rootPath: row.root_path,
+        ...(row.last_scan_at === null ? {} : { lastScanAt: row.last_scan_at }),
+        ...(parsedDiagnostics ? { diagnostics: parsedDiagnostics } : {})
+      }
+    })
   }
 
   replaceSession(sourceId: string, ref: string, session: ParsedSession): void {
@@ -389,9 +446,10 @@ class SqliteSubstrateStore implements SubstrateStore {
     const sessionRows = this.#db.prepare(`
       SELECT source_id, COUNT(*) AS count FROM sessions GROUP BY source_id
     `).all() as Array<{ source_id: string, count: number }>
+    const diagnostics = this.#hasSourceDiagnostics ? 'diagnostics_json' : 'NULL AS diagnostics_json'
     const sourceRows = this.#db.prepare(`
-      SELECT id, last_scan_at FROM sources ORDER BY id
-    `).all() as Array<{ id: string, last_scan_at: string | null }>
+      SELECT id, last_scan_at, ${diagnostics} FROM sources ORDER BY id
+    `).all() as Array<{ id: string, last_scan_at: string | null, diagnostics_json: string | null }>
     const findingRows = this.#db.prepare(`
       SELECT status, COUNT(*) AS count
       FROM findings WHERE kind = 'relay' GROUP BY status
@@ -408,6 +466,10 @@ class SqliteSubstrateStore implements SubstrateStore {
         row.id,
         row.last_scan_at ?? undefined
       ])),
+      diagnosticsBySource: Object.fromEntries(sourceRows.flatMap((row) => {
+        const parsed = parseDiagnostics(row.diagnostics_json)
+        return parsed ? [[row.id, parsed]] : []
+      })),
       findingsByStatus
     }
   }
@@ -425,6 +487,9 @@ export function openSubstrate(paths: ChoxPaths): SubstrateStore {
     chmodSync(paths.substrate, 0o600)
     db.exec('PRAGMA journal_mode = WAL')
     db.exec(schemaText())
+    if (!hasSourceDiagnostics(db)) {
+      db.exec('ALTER TABLE sources ADD COLUMN diagnostics_json TEXT')
+    }
     db.prepare('SELECT COUNT(*) AS count FROM sources').get()
     return new SqliteSubstrateStore(db)
   } catch (error) {
@@ -438,5 +503,28 @@ export function openSubstrate(paths: ChoxPaths): SubstrateStore {
       1,
       { cause: error }
     )
+  }
+}
+
+export function readSubstrateHealth(paths: ChoxPaths): SubstrateHealth {
+  if (!existsSync(paths.substrate)) return { present: false }
+  let db: DatabaseSync | undefined
+  try {
+    db = new DatabaseSync(paths.substrate, { readOnly: true })
+    const store = new SqliteSubstrateStore(db)
+    const stats = store.stats()
+    store.close()
+    db = undefined
+    return { present: true, stats }
+  } catch {
+    try {
+      db?.close()
+    } catch {
+      // Preserve the stable health result.
+    }
+    return {
+      present: true,
+      problem: `unreadable or corrupt — delete ${resolve(paths.substrate)} to rebuild it (it is a cache)`
+    }
   }
 }

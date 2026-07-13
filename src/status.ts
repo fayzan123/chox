@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path'
 
 import { isRunState, type RunState, type RunStatus } from './harness/run-store.js'
 import type { ChoxPaths } from './paths.js'
+import { readSubstrateHealth, type SubstrateHealth } from './substrate/store.js'
 
 export interface RunSummary {
   runId: string
@@ -24,6 +25,7 @@ export interface StatusReport {
     active: number
     orphaned: number
   }
+  substrate: SubstrateHealth
 }
 
 const displayCap = 10
@@ -110,7 +112,8 @@ export async function collectStatus(paths: ChoxPaths): Promise<StatusReport> {
       total: worktreeNames.length,
       active,
       orphaned: worktreeNames.length - active
-    }
+    },
+    substrate: readSubstrateHealth(paths)
   }
 }
 
@@ -138,6 +141,35 @@ export function renderStatus(report: StatusReport): string {
   lines.push(
     `Worktrees: ${report.worktrees.total} total (${report.worktrees.active} from active runs, ${report.worktrees.orphaned} orphaned)`
   )
-  lines.push('Substrate: not initialized — ships in Phase 1b')
+  if (!report.substrate.present) {
+    lines.push('Substrate: not initialized — run chox detect to scan local sessions')
+  } else if (report.substrate.problem) {
+    lines.push(`Substrate: unhealthy — ${report.substrate.problem}`)
+  } else if (report.substrate.stats) {
+    const stats = report.substrate.stats
+    const sourceIds = [...new Set([
+      ...Object.keys(stats.sessionsBySource),
+      ...Object.keys(stats.lastScanBySource)
+    ])].sort()
+    lines.push('Substrate:')
+    lines.push(`  Sessions: ${sourceIds.length === 0
+      ? 'none'
+      : sourceIds.map((id) => `${id} ${stats.sessionsBySource[id] ?? 0}`).join(', ')}`)
+    lines.push(`  Last scan: ${sourceIds.length === 0
+      ? 'never'
+      : sourceIds.map((id) => `${id} ${stats.lastScanBySource[id] ?? 'never'}`).join(', ')}`)
+    lines.push(
+      `  Relay findings: ${stats.findingsByStatus.suggested} suggested, ${stats.findingsByStatus.dismissed} dismissed, ${stats.findingsByStatus.exported} exported`
+    )
+    const diagnostics = sourceIds.flatMap((id) => {
+      const source = stats.diagnosticsBySource[id]
+      if (!source) return []
+      const unknown = Object.values(source.unknownTypes).reduce((sum, count) => sum + count, 0)
+      const files = source.failedFiles.length
+      if (unknown + source.nullLines + files === 0) return []
+      return [`${id} ${unknown} unknown, ${source.nullLines} null, ${files} file warning${files === 1 ? '' : 's'}`]
+    })
+    if (diagnostics.length > 0) lines.push(`  Scan diagnostics: ${diagnostics.join('; ')}`)
+  }
   return `${lines.join('\n')}\n`
 }

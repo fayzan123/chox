@@ -1,11 +1,22 @@
+import { createHash } from 'node:crypto'
+import { access, mkdir, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+
 import type { AnalysisEngine } from '../engines/engine.js'
 import { validateRelay, type Autonomy, type Relay } from './ir.js'
 import type { Finding } from '../lenses/lens.js'
 import { slugify } from '../slugify.js'
+import type { SubstrateStore } from '../substrate/store.js'
 
 export interface DraftedRelay {
   slug: string
   relay: Relay
+  relayJson: Record<string, unknown>
+  templates: Record<string, string>
+}
+
+export interface PersistedDraftedRelay {
+  slug: string
   relayJson: Record<string, unknown>
   templates: Record<string, string>
 }
@@ -19,6 +30,15 @@ interface DraftHop {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isFilename(value: string): boolean {
+  return value.length > 0
+    && value !== '.'
+    && value !== '..'
+    && !value.includes('/')
+    && !value.includes('\\')
+    && !value.includes('\0')
 }
 
 function parseDraft(value: unknown): { slug: string, hops: DraftHop[] } {
@@ -82,11 +102,19 @@ function templateContract(hop: DraftHop): string {
 }
 
 function draftPrompt(finding: Finding): string {
+  const evidence = {
+    occurrenceCount: finding.evidence.occurrenceCount,
+    sessionCount: finding.evidence.sessionCount,
+    dates: finding.evidence.dates,
+    repoCount: finding.evidence.repos.length,
+    totalMinutes: finding.evidence.totalMinutes,
+    medianMinutes: finding.evidence.medianMinutes
+  }
   return [
     'Draft a runnable relay for this confirmed handoff finding.',
     'Return JSON only: {"slug":string,"hops":[{"runtime":"claude|codex","role":string,"autonomy":"strict|challenge|autonomous","prompt":string}]}.',
     'Plan prompts demand a structured task breakdown and manifest. Implementation prompts demand challenge notes.',
-    `Finding: ${JSON.stringify({ chain: finding.chain, evidence: finding.evidence, confirmation: finding.confirmation })}`
+    `Finding: ${JSON.stringify({ chain: finding.chain, evidence, confirmation: finding.confirmation })}`
   ].join('\n')
 }
 
@@ -99,6 +127,9 @@ export async function draftRelay(
   try {
     parsed = parseDraft(finding.draft)
   } catch {
+    if (finding.engineCalls >= 3) {
+      throw new Error(`relay drafting exceeded the engine call budget (${finding.engineCalls}/3)`)
+    }
     parsed = parseDraft(await engine.analyze(draftPrompt(finding), { timeoutMs: 30_000 }))
   }
   const calls = engine.stats().calls - before
@@ -138,4 +169,96 @@ export async function draftRelay(
     relayJson: relayRaw,
     templates
   }
+}
+
+export function parseFinding(value: unknown): Finding {
+  if (!isRecord(value)) throw new Error('finding payload is not an object')
+  if (
+    typeof value.id !== 'string'
+    || value.lens !== 'handoff'
+    || value.kind !== 'relay'
+    || value.confirmed !== true
+    || typeof value.confirmation !== 'string'
+    || typeof value.engineCalls !== 'number'
+    || !Array.isArray(value.chain)
+    || !Array.isArray(value.occurrences)
+    || !isRecord(value.evidence)
+  ) throw new Error('finding payload is not a confirmed relay finding')
+  return value as unknown as Finding
+}
+
+export function persistedDraft(value: unknown): PersistedDraftedRelay {
+  if (!isRecord(value) || typeof value.slug !== 'string' || !isRecord(value.relayJson)) {
+    throw new Error('finding has no installable relay draft')
+  }
+  if (!isRecord(value.templates)) throw new Error('finding relay templates are invalid')
+  const templates: Record<string, string> = {}
+  for (const [name, content] of Object.entries(value.templates)) {
+    if (!isFilename(name)) throw new Error(`finding relay template ${name} must be a filename`)
+    if (typeof content !== 'string') throw new Error(`finding relay template ${name} is invalid`)
+    templates[name] = content
+  }
+  const relay = validateRelay(value.relayJson, { slug: value.slug })
+  for (const hop of relay.hops) {
+    if (templates[hop.promptTemplate] === undefined) {
+      throw new Error(`finding relay template ${hop.promptTemplate} is missing`)
+    }
+  }
+  return { slug: value.slug, relayJson: value.relayJson, templates }
+}
+
+async function availableSlug(baseDir: string, requested: string): Promise<string> {
+  let suffix = 1
+  while (true) {
+    const slug = suffix === 1 ? requested : `${requested}-${suffix}`
+    try {
+      await access(join(baseDir, slug))
+      suffix += 1
+    } catch {
+      return slug
+    }
+  }
+}
+
+export async function installDraftedRelay(opts: {
+  store: SubstrateStore
+  findingId: string
+  draft: PersistedDraftedRelay
+  baseDir: string
+  version: string
+  now?: () => Date
+}): Promise<{ slug: string, dir: string, paths: string[] }> {
+  await mkdir(opts.baseDir, { recursive: true })
+  const slug = await availableSlug(opts.baseDir, opts.draft.slug)
+  const dir = join(opts.baseDir, slug)
+  await mkdir(dir)
+  const generatedBy = `chox@${opts.version}`
+  const relayPath = join(dir, 'relay.json')
+  const relayJson = {
+    ...opts.draft.relayJson,
+    slug,
+    generatedBy,
+    finding: opts.findingId
+  }
+  await writeFile(relayPath, `${JSON.stringify(relayJson, null, 2)}\n`)
+  const paths = [relayPath]
+  for (const [name, content] of Object.entries(opts.draft.templates)) {
+    const path = join(dir, name)
+    await writeFile(
+      path,
+      `<!-- generatedBy: ${generatedBy}, finding: ${opts.findingId} -->\n${content}`
+    )
+    paths.push(path)
+  }
+  const createdAt = (opts.now ?? (() => new Date()))().toISOString()
+  opts.store.insertArtifact({
+    id: `artifact-${createHash('sha256').update(`${opts.findingId}:${dir}`).digest('hex').slice(0, 20)}`,
+    findingId: opts.findingId,
+    kind: 'relay',
+    slug,
+    placedPaths: paths,
+    createdAt
+  })
+  opts.store.updateFindingStatus(opts.findingId, 'exported')
+  return { slug, dir, paths }
 }

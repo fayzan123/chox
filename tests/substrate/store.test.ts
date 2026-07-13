@@ -68,6 +68,34 @@ test('reports a corrupt database as a rebuildable cache with an actionable path'
   expect(() => openSubstrate(paths)).toThrow(/delete .*substrate\.db.*rebuild.*cache/i)
 })
 
+test('adds source diagnostics to an existing substrate schema without rebuilding it', async () => {
+  const root = await makeTempDir()
+  const paths = resolvePaths({ CHOX_HOME: join(root, 'chox-home') })
+  await mkdir(paths.home, { recursive: true })
+  const oldDb = new DatabaseSync(paths.substrate)
+  oldDb.exec(`
+    CREATE TABLE sources (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      root_path TEXT NOT NULL,
+      last_scan_at TEXT
+    )
+  `)
+  oldDb.close()
+
+  const store = openSubstrate(paths)
+  store.upsertSource({
+    id: 'codex',
+    kind: 'codex',
+    rootPath: root,
+    diagnostics: { unknownTypes: { future: 1 }, nullLines: 2, failedFiles: [] }
+  })
+  expect(store.listSources()[0]?.diagnostics).toEqual({
+    unknownTypes: { future: 1 }, nullLines: 2, failedFiles: []
+  })
+  store.close()
+})
+
 test('finding upserts preserve dismissals and exported state', async () => {
   const root = await makeTempDir()
   const store = openSubstrate(resolvePaths({ CHOX_HOME: join(root, 'chox-home') }))

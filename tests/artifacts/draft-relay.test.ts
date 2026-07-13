@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 
-import { draftRelay } from '../../src/artifacts/draft-relay.js'
+import { draftRelay, persistedDraft } from '../../src/artifacts/draft-relay.js'
 import { compileRelay } from '../../src/artifacts/relay-compiler.js'
 import type { AnalysisEngine, EngineStats } from '../../src/engines/engine.js'
 import type { Finding } from '../../src/lenses/lens.js'
@@ -32,14 +32,16 @@ function finding(draft: unknown): Finding {
 class FakeEngine implements AnalysisEngine {
   readonly id = 'claude'
   calls = 0
+  prompts: string[] = []
   response: unknown
 
   constructor(response: unknown) {
     this.response = response
   }
 
-  async analyze(): Promise<unknown> {
+  async analyze(prompt: string): Promise<unknown> {
     this.calls += 1
+    this.prompts.push(prompt)
     return this.response
   }
 
@@ -79,9 +81,31 @@ test('drafting can use one fallback call and rejects a budget overrun cleanly', 
     slug: 'plan-implement-review'
   })
   expect(engine.calls).toBe(1)
+  expect(engine.prompts[0]).not.toContain('/repo')
 
   const overBudget = new FakeEngine(draft)
   const budgetSpent = finding(null)
   budgetSpent.engineCalls = 3
   await expect(draftRelay(budgetSpent, overBudget)).rejects.toThrow(/budget/i)
+  expect(overBudget.calls).toBe(0)
+})
+
+test('persisted drafts reject unreferenced template path traversal', () => {
+  expect(() => persistedDraft({
+    slug: 'safe-relay',
+    relayJson: {
+      slug: 'safe-relay',
+      hops: [{
+        runtime: 'claude',
+        role: 'plan',
+        autonomy: 'challenge',
+        promptTemplate: 'plan.md',
+        produces: ['spec.md']
+      }]
+    },
+    templates: {
+      'plan.md': 'Plan safely.',
+      '../outside.md': 'Do not write this.'
+    }
+  })).toThrow(/template.*filename/i)
 })

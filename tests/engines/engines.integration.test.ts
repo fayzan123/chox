@@ -1,0 +1,75 @@
+import { readFile } from 'node:fs/promises'
+
+import { afterEach, describe, expect, test } from 'vitest'
+
+import { createClaudeEngine } from '../../src/engines/claude.js'
+import { createCodexEngine } from '../../src/engines/codex.js'
+import { pickEngine } from '../../src/engines/engine.js'
+import { cleanupTempDirs, makeTempDir } from '../helpers/temp.js'
+import { installFakeAgents, setFakeAgentScript } from '../helpers/fake-agents.js'
+
+afterEach(cleanupTempDirs)
+
+describe('analysis engines', () => {
+  test('Claude parses defensive JSON and reports emitted usage', async () => {
+    const root = await makeTempDir()
+    const fake = await installFakeAgents(root)
+    await setFakeAgentScript(fake.scriptPath, {
+      stdout: [{
+        type: 'result',
+        result: '```json\n{"confirmed":true}\n```',
+        usage: { input_tokens: 10, cache_read_input_tokens: 4, output_tokens: 3 }
+      }]
+    })
+    const engine = createClaudeEngine(fake.env)
+    await expect(engine.analyze('private prompt')).resolves.toEqual({ confirmed: true })
+    expect(engine.stats()).toEqual({
+      calls: 1,
+      usage: { inputTokens: 10, cachedInputTokens: 4, outputTokens: 3 }
+    })
+    expect(await readFile(fake.stdinPath, 'utf8')).toBe('private prompt')
+    const invocation = JSON.parse(await readFile(fake.argvPath, 'utf8')) as { args: string[] }
+    expect(invocation.args).toContain('--tools')
+    expect(invocation.args).not.toContain('private prompt')
+  })
+
+  test('Codex parses agent JSON and reports emitted usage', async () => {
+    const root = await makeTempDir()
+    const fake = await installFakeAgents(root)
+    await setFakeAgentScript(fake.scriptPath, {
+      stdout: [
+        { type: 'item.completed', item: { type: 'agent_message', text: '{"confirmed":false}' } },
+        { type: 'turn.completed', usage: { input_tokens: 12, cached_input_tokens: 5, output_tokens: 2 } }
+      ]
+    })
+    const engine = createCodexEngine(fake.env)
+    await expect(engine.analyze('candidate')).resolves.toEqual({ confirmed: false })
+    expect(engine.stats()).toEqual({
+      calls: 1,
+      usage: { inputTokens: 12, cachedInputTokens: 5, outputTokens: 2 }
+    })
+    const invocation = JSON.parse(await readFile(fake.argvPath, 'utf8')) as { args: string[] }
+    expect(invocation.args).toEqual([
+      '--sandbox', 'read-only', '--ask-for-approval', 'never', 'exec', '--json', '-'
+    ])
+  })
+
+  test('invalid engine output and timeout are clean finding-level failures', async () => {
+    const root = await makeTempDir()
+    const fake = await installFakeAgents(root)
+    await setFakeAgentScript(fake.scriptPath, {
+      stdout: [{ type: 'result', result: 'not json' }]
+    })
+    await expect(createClaudeEngine(fake.env).analyze('candidate')).rejects.toThrow(/invalid JSON/i)
+    await setFakeAgentScript(fake.scriptPath, { delayMs: 100, stdout: [] })
+    await expect(createCodexEngine(fake.env).analyze('candidate', { timeoutMs: 10 }))
+      .rejects.toThrow(/exceeded.*stopped/i)
+  })
+
+  test('picks Claude first by default and honors an explicit preference', async () => {
+    const root = await makeTempDir()
+    const fake = await installFakeAgents(root)
+    expect((await pickEngine(undefined, fake.env))?.id).toBe('claude')
+    expect((await pickEngine('codex', fake.env))?.id).toBe('codex')
+  })
+})

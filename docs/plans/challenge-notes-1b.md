@@ -73,6 +73,28 @@ Claude Code `2.1.207` and Codex CLI `0.144.1` still expose the headless flags us
 the accepted Phase 1a.2 adapters. Exact AnalysisEngine output/schema flags will be
 re-verified when those adapters are implemented.
 
+### AnalysisEngine flags and accounting
+
+Verified against the same installed help parsers before implementation:
+
+- Claude analysis uses `claude -p --output-format stream-json --verbose --tools ''`.
+  Analysis needs no filesystem tools, so it does not inherit the relay runtime's
+  permission-bypass flag.
+- Codex analysis uses `codex --sandbox read-only --ask-for-approval never exec
+  --json -`. This keeps analysis read-only and supplies the prompt on stdin.
+
+`AnalysisEngine` retains the SPEC's `analyze(...): Promise<unknown>` boundary and
+adds a read-only `stats()` method for P14 call/token reporting. Findings persist the
+number of confirmation calls, so relay drafting enforces P7 per finding rather than
+mistaking a shared engine's lifetime call count for one finding's budget.
+
+The fixed `Lens.confirm(candidates, engine)` shape lacks the store it must write to.
+No signature was changed: `handoffLens.scan(store, ...)` retains that store for the
+paired interface call, while the CLI uses the explicit
+`confirmHandoffCandidates({ store, ... })` helper so persistence remains visible and
+testable. Revert path: amend the public interface to pass `SubstrateStore` to
+`confirm`, which would be cleaner but is a flag-level packet change.
+
 ## Pre-fixture redactor decisions (within P12 discretion)
 
 - The committed fixtures retain representative schema-bearing JSONL lines, not

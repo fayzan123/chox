@@ -68,6 +68,7 @@ export async function installFakeAgents(root: string): Promise<{
     const sh = join(bin, binary)
     await writeFile(sh, `#!/bin/sh\nexec "${process.execPath}" "${driver}" "${binary}" "$@"\n`)
     await chmod(sh, 0o755)
+    // Inert on macOS/Linux; retained Windows hygiene per the SPEC.md §4 platform note.
     await writeFile(join(bin, `${binary}.cmd`), `@"${process.execPath}" "${driver}" "${binary}" %*\r\n`)
   }
   await writeFile(scriptPath, JSON.stringify({ stdout: [] }))

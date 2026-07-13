@@ -44,6 +44,30 @@ describe.sequential('doctor', () => {
     expect(probes.find(({ name }) => name === 'Substrate')?.detail).toMatch(/Phase 1b/)
   })
 
+  test('an injected win32 platform is a critical failure pointing at WSL', async () => {
+    const root = await makeTempDir()
+    const fake = await installFakeAgents(root)
+    const env = { ...fake.env, HOME: root, USERPROFILE: root, CHOX_HOME: join(root, 'chox-home') }
+    const probes = await runDoctor({ paths: resolvePaths(env), env, platform: 'win32' })
+    const platform = probes.find(({ name }) => name === 'Platform')
+    expect(platform).toMatchObject({ ok: false, critical: true })
+    expect(platform?.detail).toMatch(/WSL/)
+  })
+
+  test('injected darwin and linux platforms are supported', async () => {
+    const root = await makeTempDir()
+    const fake = await installFakeAgents(root)
+    const env = { ...fake.env, HOME: root, USERPROFILE: root, CHOX_HOME: join(root, 'chox-home') }
+    for (const platform of ['darwin', 'linux'] as const) {
+      const probes = await runDoctor({ paths: resolvePaths(env), env, platform })
+      expect(probes.find(({ name }) => name === 'Platform')).toMatchObject({
+        ok: true,
+        critical: true,
+        detail: `${platform} (supported)`
+      })
+    }
+  })
+
   test('the bundle removes raw and dash-encoded home paths', () => {
     const homeDir = '/Users/fayzan.malik'
     const encoded = '-Users-fayzan-malik'

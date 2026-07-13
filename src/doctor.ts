@@ -15,6 +15,20 @@ export interface Probe {
   critical: boolean
 }
 
+// Platform decision 2026-07-13 (SPEC.md §4 platform note): macOS + Linux only;
+// WSL counts as Linux. Native Windows is deferred until external demand.
+function platformProbe(id: NodeJS.Platform): Probe {
+  if (id === 'win32') {
+    return {
+      name: 'Platform',
+      ok: false,
+      critical: true,
+      detail: 'native Windows is unsupported — run Chox inside WSL (https://learn.microsoft.com/windows/wsl/install)'
+    }
+  }
+  return { name: 'Platform', ok: true, critical: true, detail: `${id} (supported)` }
+}
+
 function nodeVersionHealthy(version: string): boolean {
   const [major = 0, minor = 0] = version.split('.').map(Number)
   return major > 22 || (major === 22 && minor >= 13)
@@ -98,8 +112,10 @@ async function runHealth(paths: ChoxPaths): Promise<{ orphans: number, unreadabl
 export async function runDoctor(opts: {
   paths: ChoxPaths
   env: NodeJS.ProcessEnv
+  platform?: NodeJS.Platform
 }): Promise<Probe[]> {
   const probes: Probe[] = []
+  probes.push(platformProbe(opts.platform ?? process.platform))
   probes.push({
     name: 'Node version',
     ok: nodeVersionHealthy(process.versions.node),

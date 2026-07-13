@@ -22,3 +22,11 @@ behaviors, edge cases, and verification commands. The manifest must be valid JSO
 Use forward-slash, repository-relative paths. Also write non-empty challenge notes
 that identify any assumptions or intentional departures, or explicitly say there
 were none.
+
+## Feature request
+
+Fix a resume bug in src/harness/runner.ts: if a run crashes in the window
+between createRun() and the plan.json write, `chox run <slug> --resume` loads
+an empty fallback plan and marks the run "completed" instead of "failed".
+Close the window (write plan.json before or atomically with run creation)
+and/or make persistedPlan() refuse to complete a run with zero hops. Add a test.

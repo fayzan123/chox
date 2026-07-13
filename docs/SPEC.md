@@ -166,7 +166,26 @@ Design principles:
    as well as quality**: community benchmarks report large token-usage differences
    between runtimes for equivalent work (Codex commonly cited at 2–3× fewer tokens on
    implementation), so a hop's default runtime is a quality×cost judgment, surfaced
-   to the user, never hidden.
+   to the user, never hidden. **Amended 2026-07-13 (first acceptance run):** routing
+   extends inside a runtime — a hop may pin a **model** (`RelayHop.model`, passed as
+   the CLI's `--model` flag). Unset means the CLI's own configured default, which is
+   then *displayed*, never silently assumed: which model ran a hop must always be
+   visible in the dry-run, the hop banner, and the run events. Model choice is a
+   token-burn/usage-limit lever the user owns; later phases inform it from observed
+   outcomes the same way runtime routing is informed.
+6. **Native sessions are preserved; Chox conducts between them.** (Founder decision,
+   2026-07-13, from the first acceptance run.) By default an attended hop launches
+   the agent's own **interactive** CLI session — the developer's familiar
+   environment, native permission prompts, mid-session steering — in the isolated
+   worktree with the compiled prompt injected; when the session ends, the harness
+   collects artifacts, runs the same autonomy checks, and gates as usual. Headless
+   execution (`claude -p` / `codex exec`) is the **opt-in** mode per hop
+   (`RelayHop.interaction`), and the required mode for `--unattended` runs and the
+   Phase 3 daemon. Chox enhances the developer's existing environment; it never
+   replaces it. Honesty note: interactive sessions expose no machine-readable event
+   stream, so advisory command observation and token accounting are headless-only
+   capabilities — the mechanical footprint check (worktree diff) works identically
+   in both modes.
 
 ```ts
 interface Relay {
@@ -181,6 +200,10 @@ interface RelayHop {
   promptTemplate: string              // receives prior hop artifacts as file paths
   autonomy: 'strict' | 'challenge' | 'autonomous'
   produces: string[]                  // artifact filenames the harness persists
+  model?: string                      // pin the runtime's model (--model); unset =
+                                      //   CLI default, always surfaced (§2 pr. 5)
+  interaction?: 'interactive' | 'headless'  // default 'interactive' when attended;
+                                      //   --unattended forces headless (§2 pr. 6)
   skillRef?: string                   // optional: slug of an installed skill to invoke
                                       //   instead of promptTemplate (§2.4)
 }
@@ -624,6 +647,20 @@ value to someone who already knows his loop.
 *Accept:* user zero runs his next real feature through `chox run` with gates and
 prefers it to the manual bounce; a relay interrupted at a gate resumes cleanly;
 `--dry-run` output matches what a real run then does; doctor bundle verified redacted.
+
+**Phase 1a.2 — Hardening from the first acceptance run (added 2026-07-13).**
+The first real run (user zero, 2026-07-13) completed and produced a correct,
+mergeable implementation — the protocol validated — but surfaced three findings:
+headless-only execution replaces the developer's native agent environment
+(§2 principle 6 is the response: interactive hops by default); model selection was
+silently inherited from CLI defaults (§2 principle 5 amendment: per-hop `model`,
+always surfaced); and run visibility failed (silent hops, no gate input echo, no
+file-change display, process failed to exit on completion). Scope: interactive hop
+mode, per-hop model pinning, run/gate visibility, per-hop token-usage reporting on
+headless hops. Plan: `docs/plans/phase-1a2-build-packet.md`.
+*Accept:* the original 1a criteria, re-judged on an interactive-mode run, plus: at
+every moment the terminal answers *what is happening, what did my keypress do, and
+what files changed* — and the process exits on its own.
 
 **Phase 1b — The substrate + handoff detection. (Demo gate.)**
 Substrate store + watermarks; claude-code + codex sources; fixture redactor; handoff

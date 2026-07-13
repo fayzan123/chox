@@ -171,9 +171,16 @@ JSONL transcripts on disk       metadata + digests only     profile     AGENTS.m
 - **Artifacts** compile findings into the simplest sufficient form (relay, skill,
   profile diff, shell alias, VS Code task), with ownership markers and conflict
   safety on every write.
-- **Harness** executes relays: spawns agent CLIs headlessly (`claude -p`,
-  `codex exec`), enforces autonomy, presents gates, isolates in worktrees, streams
-  JSONL run events, persists everything under `~/.chox/runs/`.
+- **Harness** executes relays: by default each attended hop opens the agent's own
+  **interactive** CLI session in the isolated worktree with the compiled prompt
+  injected — your normal Claude/Codex environment, native permission prompts,
+  mid-session steering (SPEC §2 principle 6, from the first acceptance run: *Chox
+  conducts between native sessions; it never replaces them*). Headless spawning
+  (`claude -p`, `codex exec`) is the per-hop opt-in and powers `--unattended` and
+  the Phase 3 daemon. Either way the harness enforces autonomy, presents gates,
+  isolates in worktrees, streams JSONL run events, and persists everything under
+  `~/.chox/runs/`. Hops can pin a model (`--model`); unset means the CLI's default,
+  always displayed, never silently assumed.
 
 **The privacy contract** (README-above-the-fold material, SPEC.md §7): nothing
 leaves the machine except digests to the engine the user chose; the substrate never

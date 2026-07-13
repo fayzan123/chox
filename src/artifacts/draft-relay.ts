@@ -95,15 +95,17 @@ function parseDraft(value: unknown): { slug: string, hops: DraftHop[] } {
   return { slug, hops }
 }
 
-function producedFor(role: string, index: number): string[] {
+function producedFor(role: string, index: number, autonomy: Autonomy): string[] {
   const normalized = role.toLocaleLowerCase('en-US')
   if (normalized.includes('plan') || normalized.includes('spec')) return ['spec.md', 'manifest.json']
-  if (normalized.includes('implement') || normalized.includes('build')) return ['challenge-notes.md']
+  if (normalized.includes('implement') || normalized.includes('build')) {
+    return [autonomy === 'challenge' ? 'challenge-notes.md' : `challenge-notes-${index + 1}.md`]
+  }
   if (normalized.includes('review')) return ['review.md']
   return [`handoff-${index + 1}.md`]
 }
 
-function templateContract(hop: DraftHop): string {
+function templateContract(hop: DraftHop, produces: string[]): string {
   const lines = [hop.prompt, '', '## Chox output contract']
   const role = hop.role.toLocaleLowerCase('en-US')
   if (role.includes('plan') || role.includes('spec')) {
@@ -113,9 +115,11 @@ function templateContract(hop: DraftHop): string {
     )
   }
   if (role.includes('implement') || role.includes('build')) {
+    const challengeNotes = produces.find((name) => name.startsWith('challenge-notes-'))
+      ?? 'challenge-notes.md'
     lines.push(
       '- Implement against the prior spec and manifest.',
-      '- Record every intentional departure and its rationale in .chox-run/challenge-notes.md.'
+      `- Record every intentional departure and its rationale in .chox-run/${challengeNotes}.`
     )
   }
   if (role.includes('review')) {
@@ -179,13 +183,14 @@ export async function draftRelay(
         suffix += 1
       }
       usedNames.add(filename)
-      templates[filename] = templateContract(hop)
+      const produces = producedFor(hop.role, index, hop.autonomy)
+      templates[filename] = templateContract(hop, produces)
       return {
         runtime: hop.runtime,
         role: hop.role,
         autonomy: hop.autonomy,
         promptTemplate: filename,
-        produces: producedFor(hop.role, index)
+        produces
       }
     })
   }

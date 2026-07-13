@@ -256,6 +256,31 @@ founder's pasted output. The mixed failures establish that more timeout alone is
 the remedy. Resolution is challenge #5's validated structured-output boundary. A third
 founder run is required from the rebuilt commit.
 
+## Founder acceptance run: third live detect and install
+
+The founder reran the same command after challenge #5's structured-output fix. It
+scanned 225 sessions and confirmed `claude-code → codex → claude-code` as a repeated
+handoff with 7 occurrences, 21 sessions, and 4 repos; the other two candidates were
+honestly rejected. Confirmation used exactly three calls and reported 6 input, 32,775
+cached-input, and 7,439 output tokens. The founder selected `[i]nstall`, producing the
+repo-local `brainstorm-plan-implement` relay and marking the finding exported.
+
+The required runtime rehearsal then caught a generator defect before execution: an
+earlier challenge-mode brainstorm hop implicitly claimed `challenge-notes.md`, while
+the autonomous implementation hop explicitly claimed the same artifact, so relay
+compilation rejected the duplicate. This was not a detection, confirmation, install-
+placement, or ownership failure; it was an interaction between the Phase 1a compiler's
+challenge-mode contract and Phase 1b's role-based artifact naming.
+
+The Phase 1b generator now preserves the engine-selected autonomy while assigning
+non-challenge implementation hops a hop-specific notes artifact such as
+`challenge-notes-3.md`; challenge-mode implementation hops retain the harness-owned
+canonical `challenge-notes.md`. The generated prompt names the same artifact it
+declares. A public `draftRelay` → `compileRelay` regression test reproduces the exact
+three-hop live shape. Direct repair of the already-installed Chox-owned relay was
+flagged for founder approval because that generated directory is outside the
+implementation MANIFEST.
+
 ## Critical areas reviewed without deviation so far
 
 - The substrate must remain a rebuildable metadata/digest cache; no raw-content SQL

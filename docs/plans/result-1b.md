@@ -54,7 +54,7 @@ Chox, Claude, or Codex homes.
 
 ```text
 npm run typecheck                                             pass
-npm test                                                      pass (139 tests)
+npm test                                                      pass (140 tests)
 npm run build                                                 pass
 npm run fixtures:verify                                       pass
 isolated node dist/bin/chox.js detect --json                  pass (honest empty output)
@@ -92,16 +92,15 @@ prefix.
 - Push the branch or open its PR and confirm the configured Ubuntu + macOS × Node
   22/24 GitHub Actions matrix. Every matrix command passes locally, but remote CI was
   not triggered from this implementation session.
-- Rerun `ANTHROPIC_MODEL=sonnet node dist/bin/chox.js detect --engine claude` against
-  the rebuilt commit. The first founder run found three candidates but timed out at 30
-  seconds. The second reached all three responses, then exposed malformed/missing
-  fields and a 25-second fallback-draft timeout. Claude confirmation and drafting now
-  use validated JSON schemas, the selected model is surfaced, and analysis is
-  safe-mode and non-persistent. The implementer intentionally never read the
-  founder's real homes.
-- Choose an engine, review its announced spend, install the confirmed finding, and
-  record the cross-agent demo. Real confirmation/drafting is covered by fake binaries;
-  only the single isolated F9 originator probe invoked a live Codex CLI.
+- Live detection and installation passed on the third founder run: Claude confirmed
+  the repeated three-agent chain with 7 occurrences over 21 sessions and 4 repos, and
+  the founder installed `brainstorm-plan-implement`. Its first dry-run caught a
+  duplicate challenge-notes artifact between an early challenge hop and the autonomous
+  implementation hop. The generator now assigns the latter a hop-specific notes file;
+  repair and dry-run of the already-installed artifact remain pending founder approval.
+- After the repaired relay dry-runs, record the cross-agent demo. Real founder
+  confirmation used three visible calls; the implementer never read the founder's
+  vendor homes or invoked an additional live engine.
 - Measure exported/dismissed quality over the specified two-week window.
 - Verify the npm `chox` handle, choose the scoped fallback if necessary, then change
   `private` only as part of the founder-controlled first publish. No placeholder

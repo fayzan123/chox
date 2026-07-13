@@ -79,6 +79,43 @@ test('a confirmed engine draft validates and compiles with implementer-formatted
   expect(plan.hops).toHaveLength(3)
 })
 
+test('an autonomous implementation can follow an earlier challenge hop without artifact collisions', async () => {
+  const engine = new FakeEngine({})
+  const result = await draftRelay(finding({
+    slug: 'brainstorm-plan-implement',
+    hops: [
+      {
+        runtime: 'claude',
+        role: 'brainstorm-and-scope',
+        autonomy: 'challenge',
+        prompt: 'Brainstorm and scope the work.'
+      },
+      {
+        runtime: 'codex',
+        role: 'detailed-planning',
+        autonomy: 'strict',
+        prompt: 'Write the detailed plan.'
+      },
+      {
+        runtime: 'claude',
+        role: 'implementation',
+        autonomy: 'autonomous',
+        prompt: 'Implement the plan and record challenge notes.'
+      }
+    ]
+  }), engine)
+
+  const plan = compileRelay({
+    relay: result.relay,
+    dir: '/generated',
+    repoRoot: '/repo',
+    templates: new Map(Object.entries(result.templates))
+  })
+
+  expect(plan.hops[2]?.produces).toContain('.chox-run/challenge-notes-3.md')
+  expect(plan.hops[2]?.prompt).toContain('.chox-run/challenge-notes-3.md')
+})
+
 test('drafting can use one fallback call and rejects a budget overrun cleanly', async () => {
   const engine = new FakeEngine(draft)
   await expect(draftRelay(finding(null), engine)).resolves.toMatchObject({

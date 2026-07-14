@@ -6,14 +6,10 @@ network call.
 
 ## Installed-package quickstart
 
-The npm handle is still founder-controlled and the package remains private. Replace
-the clearly marked `<resolved-package-name>` placeholder only after the founder has
-chosen the handle and accepted the packed journey; do not publish from this branch.
-
 Requirements: Node.js 22.13 or newer, npm, Git, Claude Code, and Codex CLI.
 
 ```sh
-npm install -g <resolved-package-name>
+npm install -g chox-cli
 cd <an-existing-git-repository>
 
 chox doctor
@@ -91,7 +87,7 @@ Run `chox <command> --help` for `run`, `detect`, `relay`, `finding`, `doctor`, o
 
 These are separate choices; uninstalling the package does not silently delete work:
 
-- **Package:** `npm uninstall -g <resolved-package-name>` removes the CLI only.
+- **Package:** `npm uninstall -g chox-cli` removes the CLI only.
 - **Global relays:** review and remove selected directories under
   `~/.chox/relays/`. Repository relays under each repo's `.chox/relays/` are
   separate user-owned files.

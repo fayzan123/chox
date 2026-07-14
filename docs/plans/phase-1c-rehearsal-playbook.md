@@ -206,17 +206,22 @@ boxes in `docs/ROADMAP.md`.
 ## Step 6 — Claim the handle and publish
 
 The handle decision is yours alone (standing rule: no placeholder publishes).
-`chox` was free as of 2026-07-14 — re-verify at the moment of publish:
+`chox` itself was unclaimed (404) as of 2026-07-14, but the real `npm publish`
+attempt was rejected by the registry's anti-squatting similarity check (E403,
+"too similar to existing packages" — chai/co/cron/etc.), not by the name being
+taken. Founder decision (2026-07-14): avoid any personal-name scope
+(`@fayzanmalik/chox`) and publish unscoped as **`chox-cli`** instead. The `bin`
+field keeps the installed command `chox` regardless of the package name.
 
 ```sh
-npm view chox      # expect 404 immediately before publishing
+npm view chox-cli      # expect 404 immediately before publishing
 ```
 
 Then, on `main`:
 
-1. In `package.json`: remove `"private": true`, set the real version (suggest
-   `0.1.0` for the first public alpha), confirm `name` (plain `chox`, or scoped
-   fallback if it got sniped).
+1. In `package.json`: remove `"private": true`, set the real version
+   (`0.1.0` for the first public alpha), `name` is `chox-cli` (`bin.chox` is
+   unchanged — the installed command stays `chox`).
 2. Confirm the README leads with the installed quickstart and the privacy
    boundary (1c already restructured this — just re-read it as a stranger).
 3. Publish:
@@ -229,7 +234,7 @@ Then, on `main`:
 4. Verify as a consumer, from a clean prefix:
 
    ```sh
-   npm install -g chox && chox doctor
+   npm install -g chox-cli && chox doctor
    ```
 
 5. Commit the version bump; tag it (`git tag v0.1.0 && git push --tags`).

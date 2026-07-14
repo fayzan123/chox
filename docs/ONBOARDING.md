@@ -279,12 +279,10 @@ is only the readable current snapshot; do not duplicate the full roadmap here.
 
 ## 10. Getting started
 
-The installed package is the product path. The npm handle is still unresolved and
-`private: true` remains binding, so `<resolved-package-name>` is an intentional
-placeholder until the founder completes the handle and acceptance gates.
+The installed package is the product path.
 
 ```sh
-npm install -g <resolved-package-name>
+npm install -g chox-cli
 cd <an-existing-git-repository>
 chox doctor
 chox relay list
@@ -330,7 +328,7 @@ The dry run prints the exact compiled plan and task that a real run would persis
 
 Package removal, data removal, and Git cleanup are intentionally independent:
 
-- `npm uninstall -g <resolved-package-name>` removes only the installed CLI.
+- `npm uninstall -g chox-cli` removes only the installed CLI.
 - Global relays live under `~/.chox/relays/`; repository relays remain in each
   repository's `.chox/relays/`. Review them individually before removal.
 - Run plans, events, and approved artifacts live under `~/.chox/runs/` and may

@@ -7,7 +7,12 @@ import { afterEach, describe, expect, test } from 'vitest'
 import { resolvePaths } from '../../src/paths.js'
 import type { ParsedSession, SessionRef, SessionSource } from '../../src/sources/source.js'
 import { scanSessionSources } from '../../src/sources/source.js'
-import { openSubstrate } from '../../src/substrate/store.js'
+import {
+  isToolInvokedSession,
+  openSubstrate,
+  readSubstrateHealth,
+  type StoredSession
+} from '../../src/substrate/store.js'
 import { cleanupTempDirs, makeTempDir } from '../helpers/temp.js'
 
 afterEach(cleanupTempDirs)
@@ -33,6 +38,53 @@ function parsed(id: string, cwd: string, digest = 'alpha beta'): ParsedSession {
     diagnostics: { unknownTypes: {}, nullLines: 0, failedFiles: [] }
   }
 }
+
+function stored(overrides: Partial<StoredSession> = {}): StoredSession {
+  return {
+    id: 'session',
+    sourceId: 'claude-code',
+    ref: '/fixture/session.jsonl',
+    repoRoot: '/repos/example',
+    cwd: '/repos/example',
+    startedAt: '2026-01-01T00:00:00.000Z',
+    endedAt: '2026-01-01T00:10:00.000Z',
+    meta: {},
+    intentDigest: 'alpha beta',
+    ...overrides
+  }
+}
+
+test('classifies tool-invoked sessions from origin, metadata, cwd, and repo root', () => {
+  const worktrees = '/state/worktrees'
+  expect(isToolInvokedSession(stored({ sourceId: 'codex', originator: 'codex_exec' }))).toBe(true)
+  expect(isToolInvokedSession(stored({
+    sourceId: 'codex',
+    originator: 'codex_vscode',
+    meta: { toolInvoked: true }
+  }))).toBe(true)
+  expect(isToolInvokedSession(stored({ cwd: '/state/worktrees/run-a' }), worktrees)).toBe(true)
+  expect(isToolInvokedSession(stored({ cwd: '/repos/organic' }), worktrees)).toBe(false)
+  expect(isToolInvokedSession(stored({
+    cwd: '/repos/organic',
+    repoRoot: '/state/worktrees/run-b'
+  }), worktrees)).toBe(true)
+})
+
+test('substrate health counts sessions rooted in the configured Chox worktrees', async () => {
+  const root = await makeTempDir()
+  const paths = resolvePaths({ CHOX_HOME: join(root, 'chox-home') })
+  const store = openSubstrate(paths)
+  store.upsertSource({ id: 'claude-code', kind: 'claude-code', rootPath: join(root, 'source') })
+  store.replaceSession('claude-code', '/fixture/organic.jsonl', parsed('organic', join(root, 'repo')))
+  store.replaceSession(
+    'claude-code',
+    '/fixture/tool.jsonl',
+    parsed('tool', join(paths.worktrees, 'run-a'))
+  )
+  store.close()
+
+  expect(readSubstrateHealth(paths).toolInvokedSessions).toBe(1)
+})
 
 test('creates the canonical schema idempotently with a private database mode', async () => {
   const root = await makeTempDir()

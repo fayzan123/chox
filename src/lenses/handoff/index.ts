@@ -24,4 +24,9 @@ class HandoffLens implements Lens {
 }
 
 export const handoffLens: Lens = new HandoffLens()
-export { confirmHandoffCandidates, scanHandoff }
+export { confirmHandoffCandidates }
+export { findCoveringRelay, resolveInstalledRelayShapes, sourceRuntime } from './covered.js'
+export type { InstalledRelayShape } from './covered.js'
+export { renderOccurrenceChain, scanHandoff, scanHandoffReport } from './scan.js'
+export type { HandoffScanReport } from './scan.js'
+export { applySubsumption, isContiguousSubsequence } from './subsume.js'

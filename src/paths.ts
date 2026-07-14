@@ -1,7 +1,7 @@
 import { access, mkdir } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { homedir } from 'node:os'
-import { resolve } from 'node:path'
+import { resolve, sep } from 'node:path'
 
 import { ChoxError } from './errors.js'
 
@@ -11,6 +11,12 @@ export interface ChoxPaths {
   worktrees: string
   relays: string
   substrate: string
+}
+
+export function isPathInside(child: string, parent: string): boolean {
+  const resolvedChild = resolve(child)
+  const resolvedParent = resolve(parent)
+  return resolvedChild === resolvedParent || resolvedChild.startsWith(`${resolvedParent}${sep}`)
 }
 
 export function resolvePaths(env: NodeJS.ProcessEnv = process.env): ChoxPaths {

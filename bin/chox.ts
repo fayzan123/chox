@@ -21,7 +21,14 @@ import { createTerminalGateIO, RunInterruptedError, type GateIO } from '../src/h
 import { executeRun } from '../src/harness/runner.js'
 import { findResumableRun } from '../src/harness/run-store.js'
 import { confirmHandoffCandidates } from '../src/lenses/handoff/confirm.js'
-import { scanHandoff } from '../src/lenses/handoff/scan.js'
+import {
+  findCoveringRelay,
+  resolveInstalledRelayShapes
+} from '../src/lenses/handoff/covered.js'
+import {
+  renderOccurrenceChain,
+  scanHandoffReport
+} from '../src/lenses/handoff/scan.js'
 import type { Candidate, Finding } from '../src/lenses/lens.js'
 import { resolvePaths } from '../src/paths.js'
 import { claudeCodeSource } from '../src/sources/claude-code.js'
@@ -33,7 +40,7 @@ import { openSubstrate, type SubstrateStore } from '../src/substrate/store.js'
 const usage = `Usage:
   chox run <slug> [--dry-run] [--resume] [--unattended]
   chox detect [--source claude-code,codex] [--lens handoff] [--json] [--since 30d]
-              [--engine claude|codex] [--no-confirm]
+              [--engine claude|codex] [--model <name>] [--no-confirm]
   chox install <finding-id>
   chox install --dismiss <finding-id>
   chox doctor [--bundle]
@@ -201,6 +208,7 @@ function parseDetect(args: string[]) {
       json: { type: 'boolean' },
       since: { type: 'string' },
       engine: { type: 'string' },
+      model: { type: 'string' },
       'no-confirm': { type: 'boolean' }
     },
     allowPositionals: false,
@@ -223,11 +231,16 @@ function parseDetect(args: string[]) {
   if (engine !== undefined && engine !== 'claude' && engine !== 'codex') {
     throw new ChoxUsageError('--engine must be claude or codex')
   }
+  const model = parsed.values.model
+  if (model !== undefined && model.trim() === '') {
+    throw new ChoxUsageError('--model requires a model name')
+  }
   return {
     sourceIds: selectedSources as Array<'claude-code' | 'codex'>,
     json: parsed.values.json ?? false,
     since: parseSince(parsed.values.since),
     engine: engine as 'claude' | 'codex' | undefined,
+    model: model?.trim(),
     noConfirm: parsed.values['no-confirm'] ?? false
   }
 }
@@ -242,9 +255,30 @@ function usageText(stats: EngineStats): string {
   return fields.length === 0 ? 'not reported' : fields.join(', ')
 }
 
-function findingLine(finding: Candidate, state: 'confirmed' | 'unconfirmed'): string {
+function findingSummary(finding: Candidate): { chain: string, evidence: string } {
+  const topOccurrence = finding.occurrences[0]
+  const chain = topOccurrence?.sessions?.length
+    ? renderOccurrenceChain(topOccurrence)
+    : finding.chain.join(' → ')
   const evidence = finding.evidence
-  return `${finding.id} [${state}] ${finding.chain.join(' → ')} — ${evidence.occurrenceCount} occurrence(s), ${evidence.sessionCount} sessions across ${evidence.repos.length} repo(s); median ${evidence.medianMinutes} minutes`
+  const interleaved = finding.occurrences.filter((occurrence) => occurrence.interleaved).length
+  const interleavedText = interleaved > 0
+    ? `; ${interleaved}/${finding.occurrences.length} occurrence(s) interleaved`
+    : ''
+  return {
+    chain,
+    evidence: `${evidence.occurrenceCount} occurrence(s), ${evidence.sessionCount} sessions across ${evidence.repos.length} repo(s); median ${evidence.medianMinutes} minutes${interleavedText}`
+  }
+}
+
+function findingLine(finding: Candidate, state: 'confirmed' | 'unconfirmed'): string {
+  const summary = findingSummary(finding)
+  return `${finding.id} [${state}] ${summary.chain} — ${summary.evidence}`
+}
+
+function coveredFindingLine(finding: Candidate): string {
+  const summary = findingSummary(finding)
+  return `${finding.id} [covered] ${summary.chain} — this loop is already automated by \`${finding.coveredBy}\`; ${summary.evidence}`
 }
 
 function scanCounts(
@@ -328,19 +362,50 @@ async function detectCommand(args: string[], ctx: CliContext): Promise<number> {
       ...(flags.since ? { since: flags.since } : {})
     })
     const counts = scanCounts(scan, store, flags.since)
-    const scannedCandidates = await scanHandoff(store, {
+    const report = await scanHandoffReport(store, {
       sourceIds: flags.sourceIds,
-      ...(flags.since ? { since: flags.since } : {})
+      ...(flags.since ? { since: flags.since } : {}),
+      worktreesRoot: paths.worktrees
     })
-    const candidates = scannedCandidates.filter((candidate) => (
+
+    if (!flags.json) {
+      ctx.stdout(`Scanned ${counts.total} sessions across ${Object.entries(counts.bySource).map(([id, count]) => `${id} (${count})`).join(' and ')}.\n`)
+      for (const result of scan) {
+        const unknown = Object.values(result.diagnostics.unknownTypes).reduce((sum, count) => sum + count, 0)
+        if (unknown + result.diagnostics.nullLines + result.diagnostics.failedFiles.length > 0) {
+          ctx.stdout(`  ${result.sourceId} diagnostics: ${unknown} unknown entries, ${result.diagnostics.nullLines} null lines, ${result.diagnostics.failedFiles.length} file warning(s).\n`)
+        }
+      }
+      if (report.toolInvokedExcluded > 0) {
+        ctx.stdout(`  ${report.toolInvokedExcluded} tool-invoked session(s) excluded (Chox-spawned runs).\n`)
+      }
+    }
+
+    const repoRoots = [...new Set(report.surfaced.flatMap(({ evidence }) => evidence.repos))]
+    const shapes = await resolveInstalledRelayShapes({ repoRoots, paths })
+    const covered: Candidate[] = []
+    const uncovered: Candidate[] = []
+    for (const candidate of report.surfaced) {
+      const slug = findCoveringRelay(candidate, shapes)
+      if (slug) {
+        candidate.coveredBy = slug
+        store.upsertFinding({
+          id: candidate.id,
+          lens: 'handoff',
+          kind: 'handoff-candidate',
+          createdAt: new Date().toISOString(),
+          status: 'suggested',
+          payload: candidate
+        })
+        covered.push(candidate)
+      } else {
+        uncovered.push(candidate)
+      }
+    }
+    const candidates = uncovered.filter((candidate) => (
       store.getFinding(candidate.id)?.status === 'suggested'
     ))
-    const belowFloor = store.listFindings({ kind: 'handoff-candidate' })
-      .filter((finding) => (
-        typeof finding.payload === 'object'
-        && finding.payload !== null
-        && (finding.payload as { surfaced?: unknown }).surfaced === false
-      )).length
+    const belowFloor = report.belowFloor
     let findings: Finding[] = []
     const failures: Array<{ candidateId: string, message: string }> = []
     let engineStats: EngineStats | undefined
@@ -348,9 +413,14 @@ async function detectCommand(args: string[], ctx: CliContext): Promise<number> {
     let engineModel: string | undefined
     let missingEngine = false
     let engineAttempted = false
+    const progress = (line: string): void => flags.json ? ctx.stderr(line) : ctx.stdout(line)
 
     if (candidates.length > 0 && !flags.noConfirm) {
-      const engine = await pickEngine(flags.engine, ctx.env)
+      const engine = await pickEngine(
+        flags.engine,
+        ctx.env,
+        flags.model ? { model: flags.model } : {}
+      )
       if (!engine) {
         missingEngine = true
       } else {
@@ -360,9 +430,11 @@ async function detectCommand(args: string[], ctx: CliContext): Promise<number> {
         const notice = `Confirmation engine: ${engine.id}; model: ${engine.model ?? 'CLI default'}; ceiling: 3 calls per finding.\n`
         if (flags.json) ctx.stderr(notice)
         else ctx.stdout(notice)
-        const outcome = await confirmHandoffCandidates({ store, candidates, engine })
+        const outcome = await confirmHandoffCandidates({ store, candidates, engine, progress })
         failures.push(...outcome.failures)
         for (const finding of outcome.findings) {
+          const callsBefore = engine.stats().calls
+          progress(`drafting ${finding.id} …\n`)
           try {
             const drafted = await draftRelay(finding, engine)
             const persisted = {
@@ -380,6 +452,9 @@ async function detectCommand(args: string[], ctx: CliContext): Promise<number> {
               payload: enriched
             })
             findings.push(enriched)
+            progress(
+              `drafted ${finding.id} (${engine.stats().calls - callsBefore} additional call(s))\n`
+            )
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error)
             failures.push({
@@ -417,6 +492,7 @@ async function detectCommand(args: string[], ctx: CliContext): Promise<number> {
         scan: {
           totalSessions: counts.total,
           sessionsBySource: counts.bySource,
+          toolInvokedSessions: report.toolInvokedExcluded,
           diagnostics: Object.fromEntries(scan.map((result) => [result.sourceId, result.diagnostics]))
         },
         engine: engineId
@@ -436,9 +512,25 @@ async function detectCommand(args: string[], ctx: CliContext): Promise<number> {
             evidence: finding.evidence,
             confirmation: finding.confirmation
           })),
+          ...covered.map((candidate) => ({
+            id: candidate.id,
+            state: 'covered',
+            coveredBy: candidate.coveredBy,
+            pattern: candidate.pattern,
+            chain: candidate.chain,
+            evidence: candidate.evidence
+          })),
           ...unconfirmed.map((candidate) => ({
             id: candidate.id,
             state: 'unconfirmed',
+            pattern: candidate.pattern,
+            chain: candidate.chain,
+            evidence: candidate.evidence
+          })),
+          ...report.subsumed.map((candidate) => ({
+            id: candidate.id,
+            state: 'subsumed',
+            subsumedBy: candidate.subsumedBy,
             pattern: candidate.pattern,
             chain: candidate.chain,
             evidence: candidate.evidence
@@ -449,22 +541,16 @@ async function detectCommand(args: string[], ctx: CliContext): Promise<number> {
       return 0
     }
 
-    ctx.stdout(`Scanned ${counts.total} sessions across ${Object.entries(counts.bySource).map(([id, count]) => `${id} (${count})`).join(' and ')}.\n`)
-    for (const result of scan) {
-      const unknown = Object.values(result.diagnostics.unknownTypes).reduce((sum, count) => sum + count, 0)
-      if (unknown + result.diagnostics.nullLines + result.diagnostics.failedFiles.length > 0) {
-        ctx.stdout(`  ${result.sourceId} diagnostics: ${unknown} unknown entries, ${result.diagnostics.nullLines} null lines, ${result.diagnostics.failedFiles.length} file warning(s).\n`)
-      }
-    }
-    if (candidates.length === 0) {
+    if (covered.length + candidates.length === 0) {
       ctx.stdout(renderNoFindings(counts, belowFloor).split('\n').slice(1).join('\n'))
       return 0
     }
-    if (flags.noConfirm) {
+    if (candidates.length > 0 && flags.noConfirm) {
       ctx.stdout('Confirmation skipped by --no-confirm; candidates are unconfirmed and no engine was spawned.\n')
-    } else if (missingEngine) {
+    } else if (candidates.length > 0 && missingEngine) {
       ctx.stdout('No analysis engine is available; candidates are unconfirmed. Install Claude Code or Codex CLI, then rerun detect, or use --no-confirm.\n')
     }
+    for (const candidate of covered) ctx.stdout(`${coveredFindingLine(candidate)}\n`)
     for (const finding of findings) ctx.stdout(`${findingLine(finding, 'confirmed')}\n`)
     for (const candidate of unconfirmed) ctx.stdout(`${findingLine(candidate, 'unconfirmed')}\n`)
     if (rejectedCount > 0) {

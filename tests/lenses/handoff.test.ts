@@ -3,7 +3,11 @@ import { join } from 'node:path'
 
 import { afterEach, expect, test } from 'vitest'
 
-import { scanHandoff } from '../../src/lenses/handoff/scan.js'
+import {
+  renderOccurrenceChain,
+  scanHandoff,
+  scanHandoffReport
+} from '../../src/lenses/handoff/scan.js'
 import { resolvePaths } from '../../src/paths.js'
 import type { ParsedSession } from '../../src/sources/source.js'
 import { openSubstrate, type SubstrateStore } from '../../src/substrate/store.js'
@@ -21,12 +25,13 @@ function addSession(store: SubstrateStore, input: {
   digest?: string
   originator?: string
   toolInvoked?: boolean
+  cwd?: string
 }): void {
   store.upsertSource({ id: input.sourceId, kind: input.sourceId, rootPath: '/fixture' })
   const parsed: ParsedSession = {
     meta: {
       id: input.id,
-      cwd: input.repoRoot,
+      cwd: input.cwd ?? input.repoRoot,
       repoRoot: input.repoRoot,
       ...(input.originator ? { originator: input.originator } : {}),
       startedAt: input.startedAt,
@@ -86,8 +91,118 @@ test('surfaces a three-session cross-source loop with honest evidence', async ()
   expect(candidates[0]?.occurrences[0]).toMatchObject({
     continuationPairs: 2,
     gitCorrelated: false,
-    weight: 1.25
+    weight: 1.25,
+    interleaved: false,
+    sessions: [
+      {
+        sourceId: 'claude-code',
+        startedAt: '2026-01-01T10:00:00.000Z',
+        endedAt: '2026-01-01T10:10:00.000Z'
+      },
+      {
+        sourceId: 'codex',
+        startedAt: '2026-01-01T11:00:00.000Z',
+        endedAt: '2026-01-01T11:20:00.000Z'
+      },
+      {
+        sourceId: 'claude-code',
+        startedAt: '2026-01-01T12:00:00.000Z',
+        endedAt: '2026-01-01T12:30:00.000Z'
+      }
+    ]
   })
+  expect(renderOccurrenceChain(candidates[0]!.occurrences[0]!))
+    .toBe('claude-code → codex → claude-code')
+  store.close()
+})
+
+test('excludes every session rooted in Chox worktrees before building candidates', async () => {
+  const { store, root } = await storeFixture()
+  const worktreesRoot = join(root, 'chox-home', 'worktrees')
+  const repo = join(worktreesRoot, 'run-x')
+  for (const [index, sourceId] of ['claude-code', 'codex', 'claude-code'].entries()) {
+    addSession(store, {
+      id: `tool-${index}`,
+      sourceId: sourceId as 'claude-code' | 'codex',
+      repoRoot: repo,
+      startedAt: `2026-01-01T1${index}:00:00.000Z`,
+      endedAt: `2026-01-01T1${index}:10:00.000Z`
+    })
+  }
+
+  const report = await scanHandoffReport(store, { worktreesRoot })
+  expect(report.surfaced).toEqual([])
+  expect(report.subsumed).toEqual([])
+  expect(report.toolInvokedExcluded).toBe(3)
+  expect(report.belowFloor).toBe(0)
+  store.close()
+})
+
+test('worktree exclusion prevents Chox runs from inflating organic occurrences', async () => {
+  const { store, root } = await storeFixture()
+  const worktreesRoot = join(root, 'chox-home', 'worktrees')
+  for (const [repo, prefix, day] of [
+    [join(root, 'organic-repo'), 'organic', '01'],
+    [join(worktreesRoot, 'run-x'), 'tool', '02']
+  ] as const) {
+    for (const [index, sourceId] of ['claude-code', 'codex', 'claude-code'].entries()) {
+      addSession(store, {
+        id: `${prefix}-${index}`,
+        sourceId: sourceId as 'claude-code' | 'codex',
+        repoRoot: repo,
+        startedAt: `2026-01-${day}T1${index}:00:00.000Z`,
+        endedAt: `2026-01-${day}T1${index}:10:00.000Z`
+      })
+    }
+  }
+
+  const filtered = await scanHandoffReport(store, { worktreesRoot })
+  expect(filtered.surfaced[0]?.evidence).toMatchObject({ occurrenceCount: 1, sessionCount: 3 })
+  expect(filtered.toolInvokedExcluded).toBe(3)
+  const unfiltered = await scanHandoffReport(store)
+  expect(unfiltered.surfaced[0]?.evidence).toMatchObject({ occurrenceCount: 2, sessionCount: 6 })
+  store.close()
+})
+
+test('marks and renders overlapping sessions without inventing strict sequence', async () => {
+  const { store, root } = await storeFixture()
+  const repo = join(root, 'repo')
+  addSession(store, {
+    id: 'plan', sourceId: 'claude-code', repoRoot: repo,
+    startedAt: '2026-01-01T00:59:00.000Z', endedAt: '2026-01-01T05:44:00.000Z'
+  })
+  addSession(store, {
+    id: 'build', sourceId: 'codex', repoRoot: repo,
+    startedAt: '2026-01-01T01:07:00.000Z', endedAt: '2026-01-01T04:16:00.000Z'
+  })
+  addSession(store, {
+    id: 'review', sourceId: 'claude-code', repoRoot: repo,
+    startedAt: '2026-01-01T05:45:00.000Z', endedAt: '2026-01-01T05:55:00.000Z'
+  })
+
+  const occurrence = (await scanHandoff(store))[0]?.occurrences[0]
+  expect(occurrence).toMatchObject({ interleaved: true })
+  expect(occurrence?.sessions).toHaveLength(3)
+  expect(occurrence && renderOccurrenceChain(occurrence))
+    .toBe('claude-code ⇄ codex (concurrent) → claude-code')
+  store.close()
+})
+
+test('scan reports below-floor patterns from the current pass only', async () => {
+  const { store, root } = await storeFixture()
+  const repo = join(root, 'repo')
+  addSession(store, {
+    id: 'plan', sourceId: 'claude-code', repoRoot: repo,
+    startedAt: '2026-01-01T10:00:00.000Z', endedAt: '2026-01-01T10:10:00.000Z'
+  })
+  addSession(store, {
+    id: 'build', sourceId: 'codex', repoRoot: repo,
+    startedAt: '2026-01-01T11:00:00.000Z', endedAt: '2026-01-01T11:10:00.000Z'
+  })
+
+  const report = await scanHandoffReport(store)
+  expect(report.belowFloor).toBe(1)
+  expect(report.surfaced).toEqual([])
   store.close()
 })
 

@@ -69,6 +69,8 @@ function safeCandidate(candidate: Candidate): unknown {
     },
     occurrences: candidate.occurrences.map((occurrence) => ({
       sourceIds: occurrence.sourceIds,
+      sessions: occurrence.sessions,
+      interleaved: occurrence.interleaved,
       startedAt: occurrence.startedAt,
       endedAt: occurrence.endedAt,
       durationMinutes: occurrence.durationMinutes,
@@ -79,21 +81,41 @@ function safeCandidate(candidate: Candidate): unknown {
   }
 }
 
-async function highestWeightedExcerpts(candidate: Candidate): Promise<Array<{
+const excerptCharsPerSession = 3000
+
+async function topOccurrenceExcerpts(candidate: Candidate): Promise<Array<{
+  occurrence: number
+  startedAt: string
   source: string
   excerpt: string
 }>> {
-  const highest = candidate.occurrences[0]
-  if (!highest) return []
-  const excerpts: Array<{ source: string, excerpt: string }> = []
-  for (let index = 0; index < highest.refs.length; index += 1) {
-    const ref = highest.refs[index]
-    const source = highest.sourceIds[index]
-    if (!ref || !source) continue
-    try {
-      excerpts.push({ source, excerpt: await readSessionExcerpt(source, ref, 3000) })
-    } catch {
-      // The source file may have moved since scan. Confirmation can still use metadata.
+  const totalBudget = excerptCharsPerSession * candidate.chain.length
+  const top = candidate.occurrences.slice(0, Math.min(3, candidate.occurrences.length))
+  if (top.length === 0) return []
+  const perOccurrence = Math.floor(totalBudget / top.length)
+  const excerpts: Array<{
+    occurrence: number
+    startedAt: string
+    source: string
+    excerpt: string
+  }> = []
+  for (const [rank, occurrence] of top.entries()) {
+    const perRef = Math.floor(perOccurrence / Math.max(1, occurrence.refs.length))
+    if (perRef <= 0) continue
+    for (let index = 0; index < occurrence.refs.length; index += 1) {
+      const ref = occurrence.refs[index]
+      const source = occurrence.sourceIds[index]
+      if (!ref || !source) continue
+      try {
+        excerpts.push({
+          occurrence: rank + 1,
+          startedAt: occurrence.startedAt,
+          source,
+          excerpt: await readSessionExcerpt(source, ref, perRef)
+        })
+      } catch {
+        // The source file may have moved since scan. Confirmation can still use metadata.
+      }
     }
   }
   return excerpts
@@ -108,9 +130,11 @@ function confirmationPrompt(candidate: Candidate, excerpts: unknown): string {
     'Plan prompts must demand a structured breakdown and manifest; implementation prompts must demand challenge notes.',
     'If the candidate is not confirmed, set relay to null.',
     'Return JSON only: {"confirmed":boolean,"reason":string,"relay":{"slug":string,"hops":[...]}}.',
+    'Occurrence session start/end times are included. Sessions in an occurrence marked',
+    'interleaved:true ran concurrently (their time ranges overlap) — do not present them as a strict sequence and do not invent sequential roles for concurrent sessions.',
     '',
     `Candidate: ${JSON.stringify(safeCandidate(candidate))}`,
-    `Highest-weighted transcript excerpts: ${JSON.stringify(excerpts)}`
+    `Transcript excerpts from the top occurrences by weight: ${JSON.stringify(excerpts)}`
   ].join('\n')
 }
 
@@ -140,15 +164,20 @@ export async function confirmHandoffCandidates(opts: {
   candidates: Candidate[]
   engine: AnalysisEngine
   maxCallsPerFinding?: number
+  progress?: (line: string) => void
 }): Promise<ConfirmationOutcome> {
   const findings: Finding[] = []
   const failures: ConfirmationFailure[] = []
   const maxCalls = opts.maxCallsPerFinding ?? 3
-  for (const candidate of opts.candidates) {
+  for (const [index, candidate] of opts.candidates.entries()) {
     const callsBefore = opts.engine.stats().calls
     const started = Date.now()
+    const total = opts.candidates.length
+    const label = candidate.chain.join('→')
+    opts.progress?.(`confirming ${index + 1}/${total}: ${label} … call 1\n`)
+    let completion: 'confirmed' | 'rejected' | 'failed' = 'rejected'
     try {
-      const excerpts = await highestWeightedExcerpts(candidate)
+      const excerpts = await topOccurrenceExcerpts(candidate)
       const response = await opts.engine.analyze(confirmationPrompt(candidate, excerpts), {
         timeoutMs: confirmationTimeoutMs,
         jsonSchema: confirmationJsonSchema
@@ -157,17 +186,20 @@ export async function confirmHandoffCandidates(opts: {
       if (calls > maxCalls) throw new Error(`engine call budget exceeded (${calls}/${maxCalls})`)
       if (Date.now() - started >= 90_000) throw new Error('confirmation exceeded the 90s finding budget')
       const finding = findingFromResponse(candidate, response, calls)
-      if (!finding) continue
-      opts.store.upsertFinding({
-        id: finding.id,
-        lens: 'handoff',
-        kind: 'relay',
-        createdAt: new Date().toISOString(),
-        status: 'suggested',
-        payload: finding
-      })
-      findings.push(finding)
+      if (finding) {
+        opts.store.upsertFinding({
+          id: finding.id,
+          lens: 'handoff',
+          kind: 'relay',
+          createdAt: new Date().toISOString(),
+          status: 'suggested',
+          payload: finding
+        })
+        findings.push(finding)
+        completion = 'confirmed'
+      }
     } catch (error) {
+      completion = 'failed'
       const message = error instanceof Error ? error.message : String(error)
       failures.push({ candidateId: candidate.id, message })
       opts.store.upsertFinding({
@@ -179,6 +211,11 @@ export async function confirmHandoffCandidates(opts: {
         payload: { ...candidate, confirmationError: message }
       })
     }
+    const calls = opts.engine.stats().calls - callsBefore
+    const seconds = Math.round((Date.now() - started) / 1000)
+    opts.progress?.(
+      `${completion} ${index + 1}/${total}: ${candidate.id} (${calls} call(s), ${seconds}s)\n`
+    )
   }
   return { findings, failures }
 }

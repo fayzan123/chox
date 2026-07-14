@@ -3,6 +3,7 @@ import {
   parseEngineJson,
   runEngineProcess,
   type AnalysisEngine,
+  type EngineCreateOpts,
   type EngineStats,
   type EngineUsage
 } from './engine.js'
@@ -15,10 +16,13 @@ function token(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined
 }
 
-export function createClaudeEngine(env: NodeJS.ProcessEnv = process.env): AnalysisEngine {
+export function createClaudeEngine(
+  env: NodeJS.ProcessEnv = process.env,
+  opts: EngineCreateOpts = {}
+): AnalysisEngine {
   let calls = 0
   const usage: EngineUsage = {}
-  const model = env.ANTHROPIC_MODEL?.trim() || undefined
+  const model = opts.model?.trim() || env.ANTHROPIC_MODEL?.trim() || undefined
   return {
     id: 'claude',
     ...(model ? { model } : {}),

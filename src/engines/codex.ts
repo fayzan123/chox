@@ -3,6 +3,7 @@ import {
   parseEngineJson,
   runEngineProcess,
   type AnalysisEngine,
+  type EngineCreateOpts,
   type EngineStats,
   type EngineUsage
 } from './engine.js'
@@ -15,17 +16,23 @@ function token(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined
 }
 
-export function createCodexEngine(env: NodeJS.ProcessEnv = process.env): AnalysisEngine {
+export function createCodexEngine(
+  env: NodeJS.ProcessEnv = process.env,
+  opts: EngineCreateOpts = {}
+): AnalysisEngine {
   let calls = 0
   const usage: EngineUsage = {}
+  const model = opts.model?.trim() || undefined
   return {
     id: 'codex',
+    ...(model ? { model } : {}),
     async analyze(prompt, opts = {}) {
       calls += 1
       const result = await runEngineProcess({
         binary: 'codex',
         args: [
           '--sandbox', 'read-only', '--ask-for-approval', 'never',
+          ...(model ? ['-c', `model=${model}`] : []),
           'exec', '--json', '-'
         ],
         env,

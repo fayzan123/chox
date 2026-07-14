@@ -50,17 +50,18 @@ async function writeClaudeSession(
   name: string,
   startedAt: string,
   endedAt: string,
-  prompt: string
+  prompt: string,
+  cwd = repo
 ): Promise<void> {
   const dir = join(home, '.claude', 'projects', 'fixture-project')
   await mkdir(dir, { recursive: true })
   await writeFile(join(dir, `${name}.jsonl`), [
     JSON.stringify({
-      type: 'user', timestamp: startedAt, cwd: repo,
+      type: 'user', timestamp: startedAt, cwd,
       message: { role: 'user', content: prompt }
     }),
     JSON.stringify({
-      type: 'assistant', timestamp: endedAt, cwd: repo,
+      type: 'assistant', timestamp: endedAt, cwd,
       message: { role: 'assistant', content: 'Completed.' }
     })
   ].join('\n'))
@@ -72,14 +73,15 @@ async function writeCodexSession(
   name: string,
   startedAt: string,
   endedAt: string,
-  prompt: string
+  prompt: string,
+  cwd = repo
 ): Promise<void> {
   const dir = join(home, '.codex', 'sessions', '2026', '01', '01')
   await mkdir(dir, { recursive: true })
   await writeFile(join(dir, `${name}.jsonl`), [
     JSON.stringify({
       type: 'session_meta', timestamp: startedAt,
-      payload: { cwd: repo, originator: 'codex_vscode', source: 'vscode' }
+      payload: { cwd, originator: 'codex_vscode', source: 'vscode' }
     }),
     JSON.stringify({
       type: 'response_item', timestamp: startedAt,
@@ -108,6 +110,26 @@ async function writeLoop(home: string, repo: string, prefix = 'loop'): Promise<v
     '2026-01-01T12:00:00.000Z', '2026-01-01T12:10:00.000Z',
     'Review gamma implementation against requirements'
   )
+}
+
+async function writeInstalledRelay(
+  baseDir: string,
+  slug: string,
+  runtimes: Array<'claude' | 'codex'>
+): Promise<void> {
+  const dir = join(baseDir, slug)
+  await mkdir(dir, { recursive: true })
+  const hops = runtimes.map((runtime, index) => ({
+    runtime,
+    role: `role-${index + 1}`,
+    promptTemplate: `hop-${index + 1}.md`,
+    autonomy: 'autonomous',
+    produces: [`artifact-${index + 1}.md`]
+  }))
+  await writeFile(join(dir, 'relay.json'), JSON.stringify({ slug, hops }))
+  await Promise.all(hops.map(async (hop, index) => {
+    await writeFile(join(dir, hop.promptTemplate), `Prompt ${index + 1}`)
+  }))
 }
 
 async function detectionFixture() {
@@ -166,6 +188,95 @@ test('detect JSON has stable fields, confirms a finding, and status reads substr
   const status = freshOutput(fixture.output.ctx)
   expect(await runCli(['status'], status.ctx)).toBe(0)
   expect(status.stdout.join('')).toMatch(/Substrate:[\s\S]*claude-code 2, codex 1[\s\S]*1 suggested/)
+})
+
+test('--model reaches the selected engine and remains visible without corrupting JSON stdout', async () => {
+  const fixture = await detectionFixture()
+  expect(await runCli([
+    'detect', '--json', '--engine', 'claude', '--model', 'fake-sonnet'
+  ], fixture.output.ctx)).toBe(0)
+
+  const invocation = JSON.parse(await readFile(fixture.fake.argvPath, 'utf8')) as { args: string[] }
+  expect(invocation.args.slice(invocation.args.indexOf('--model'), invocation.args.indexOf('--model') + 2))
+    .toEqual(['--model', 'fake-sonnet'])
+  expect(fixture.output.stderr.join('')).toContain('model: fake-sonnet')
+  const parsed = JSON.parse(fixture.output.stdout.join('')) as { engine: { model: string } }
+  expect(parsed.engine.model).toBe('fake-sonnet')
+
+  const invalid = freshOutput(fixture.output.ctx)
+  expect(await runCli(['detect', '--model', '   '], invalid.ctx)).toBe(2)
+  expect(invalid.stderr.join('')).toContain('--model requires a model name')
+})
+
+test('confirmation progress uses stdout for humans and stderr for JSON', async () => {
+  const human = await detectionFixture()
+  expect(await runCli(['detect', '--engine', 'claude'], human.output.ctx)).toBe(0)
+  expect(human.output.stdout.join('')).toContain(
+    'confirming 1/1: claude-code→codex→claude-code … call 1'
+  )
+  expect(human.output.stdout.join('')).toMatch(/confirmed 1\/1: handoff-[0-9a-f]{16} \(\d+ call\(s\), \d+s\)/)
+
+  const machine = await detectionFixture()
+  expect(await runCli(['detect', '--json', '--engine', 'claude'], machine.output.ctx)).toBe(0)
+  expect(() => JSON.parse(machine.output.stdout.join(''))).not.toThrow()
+  expect(machine.output.stdout.join('')).not.toContain('confirming 1/1:')
+  expect(machine.output.stderr.join('')).toContain(
+    'confirming 1/1: claude-code→codex→claude-code … call 1'
+  )
+})
+
+test('detect excludes Chox-worktree sessions and reports the exclusion count', async () => {
+  const fixture = await detectionFixture()
+  const worktree = join(fixture.choxHome, 'worktrees', 'relay-run')
+  await mkdir(worktree, { recursive: true })
+  await writeClaudeSession(
+    fixture.home, fixture.repo, 'tool-plan',
+    '2026-01-01T13:00:00.000Z', '2026-01-01T13:10:00.000Z',
+    'Tool invoked plan', worktree
+  )
+  await writeCodexSession(
+    fixture.home, fixture.repo, 'tool-build',
+    '2026-01-01T14:00:00.000Z', '2026-01-01T14:10:00.000Z',
+    'Tool invoked build', worktree
+  )
+
+  expect(await runCli(['detect', '--no-confirm', '--json'], fixture.output.ctx)).toBe(0)
+  const result = JSON.parse(fixture.output.stdout.join('')) as {
+    scan: { toolInvokedSessions: number }
+    findings: Array<{ chain: string[] }>
+  }
+  expect(result.scan.toolInvokedSessions).toBeGreaterThanOrEqual(2)
+  expect(result.findings.map(({ chain }) => chain)).toEqual([
+    ['claude-code', 'codex', 'claude-code']
+  ])
+
+  const human = freshOutput(fixture.output.ctx)
+  expect(await runCli(['detect', '--no-confirm'], human.ctx)).toBe(0)
+  expect(human.stdout.join('')).toContain('tool-invoked session(s) excluded')
+})
+
+test('an installed matching relay reports coverage and spends no analysis calls', async () => {
+  const fixture = await detectionFixture()
+  await writeInstalledRelay(
+    join(fixture.choxHome, 'relays'),
+    'spec-implement-review',
+    ['claude', 'codex', 'claude']
+  )
+
+  expect(await runCli(['detect', '--json'], fixture.output.ctx)).toBe(0)
+  const result = JSON.parse(fixture.output.stdout.join('')) as {
+    engine: unknown
+    findings: Array<{ state: string, coveredBy?: string }>
+  }
+  expect(result.engine).toBeNull()
+  expect(result.findings).toEqual([
+    expect.objectContaining({ state: 'covered', coveredBy: 'spec-implement-review' })
+  ])
+  await expect(access(fixture.fake.logPath)).rejects.toThrow()
+
+  const human = freshOutput(fixture.output.ctx)
+  expect(await runCli(['detect'], human.ctx)).toBe(0)
+  expect(human.stdout.join('')).toContain('already automated by `spec-implement-review`')
 })
 
 test('--no-confirm spawns no engine and labels candidates unconfirmed', async () => {
@@ -311,16 +422,17 @@ test('install is repo-local, never overwrites a collision, and dismiss persists'
   dismissedStore.close()
 })
 
-test('usage errors cover future lenses, invalid since, and invalid engine values', async () => {
+test('usage errors cover future lenses, invalid since, invalid engine, and empty model values', async () => {
   for (const args of [
     ['detect', '--lens', 'profile'],
     ['detect', '--lens', 'repetition'],
     ['detect', '--since', 'soon'],
-    ['detect', '--engine', 'future']
+    ['detect', '--engine', 'future'],
+    ['detect', '--model', '   ']
   ]) {
     const output = context()
     expect(await runCli(args, output.ctx)).toBe(2)
-    expect(output.stderr.join('')).toMatch(/Phase|since|engine/i)
+    expect(output.stderr.join('')).toMatch(/Phase|since|engine|model/i)
   }
 })
 
@@ -358,14 +470,23 @@ test('demo-gate rehearsal confirms and validates a relay from three shared repos
     cwd,
     env: { ...fake.env, HOME: home, USERPROFILE: home, CHOX_HOME: choxHome }
   })
+  await writeInstalledRelay(
+    join(choxHome, 'relays'),
+    'spec-implement-review',
+    ['claude', 'codex', 'claude']
+  )
   expect(await runCli(['detect', '--json'], output.ctx)).toBe(0)
-  const result = JSON.parse(output.stdout.join('')) as { findings: Array<{ id: string, state: string }> }
-  expect(result.findings.some(({ state }) => state === 'confirmed')).toBe(true)
+  const result = JSON.parse(output.stdout.join('')) as {
+    findings: Array<{ id: string, state: string, coveredBy?: string }>
+  }
+  expect(result.findings.some(({ state, coveredBy }) => (
+    state === 'covered' && coveredBy === 'spec-implement-review'
+  ))).toBe(true)
+  await expect(access(fake.logPath)).rejects.toThrow()
   const store = openSubstrate(resolvePaths(output.ctx.env))
   const stored = store.getFinding(result.findings[0]?.id ?? '')
   expect(stored?.payload).toMatchObject({
-    confirmed: true,
-    draftedRelay: { slug: engineRelay.relay.slug }
+    coveredBy: 'spec-implement-review'
   })
   store.close()
 })

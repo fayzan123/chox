@@ -5,6 +5,7 @@ import { afterEach, expect, test } from 'vitest'
 
 import type { RunState } from '../../src/harness/run-store.js'
 import { resolvePaths } from '../../src/paths.js'
+import type { ParsedSession } from '../../src/sources/source.js'
 import { collectStatus, renderStatus } from '../../src/status.js'
 import { openSubstrate } from '../../src/substrate/store.js'
 import { assertIsolatedPaths, cleanupTempDirs, makeTempDir } from '../helpers/temp.js'
@@ -151,6 +152,42 @@ test('reports the latest per-source scan diagnostics without exposing file paths
   expect(text).toContain('Scan diagnostics: claude-code 2 unknown, 1 null, 1 file warning')
   expect(text).not.toContain('session.jsonl')
   expect(text).not.toContain('private-home')
+})
+
+test('renders the count of sessions excluded from handoff detection only when nonzero', async () => {
+  const root = await makeTempDir()
+  const paths = resolvePaths({ CHOX_HOME: join(root, 'chox-home') })
+  const store = openSubstrate(paths)
+  store.upsertSource({ id: 'claude-code', kind: 'claude-code', rootPath: join(root, 'source') })
+  const parsed: ParsedSession = {
+    meta: {
+      id: 'tool-session',
+      cwd: join(paths.worktrees, 'run-a'),
+      repoRoot: join(root, 'repo'),
+      originator: 'claude-code',
+      startedAt: '2026-01-01T10:00:00.000Z',
+      endedAt: '2026-01-01T10:10:00.000Z',
+      metadata: {}
+    },
+    units: [{
+      id: 'tool-session:session',
+      startedAt: '2026-01-01T10:00:00.000Z',
+      endedAt: '2026-01-01T10:10:00.000Z',
+      intentDigest: 'tool session',
+      metadata: {}
+    }],
+    diagnostics: { unknownTypes: {}, nullLines: 0, failedFiles: [] }
+  }
+  store.replaceSession('claude-code', '/fixture/tool.jsonl', parsed)
+  store.close()
+
+  expect(renderStatus(await collectStatus(paths))).toContain(
+    'Tool-invoked sessions: 1 (excluded from handoff detection)'
+  )
+
+  const emptyPaths = resolvePaths({ CHOX_HOME: join(root, 'empty-chox-home') })
+  openSubstrate(emptyPaths).close()
+  expect(renderStatus(await collectStatus(emptyPaths))).not.toContain('Tool-invoked sessions:')
 })
 
 test('renders an empty home as a friendly no-runs status', () => {

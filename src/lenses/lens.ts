@@ -10,11 +10,19 @@ export interface LensEvidence {
   medianMinutes: number
 }
 
+export interface OccurrenceSession {
+  sourceId: string
+  startedAt: string
+  endedAt: string
+}
+
 export interface CandidateOccurrence {
   repoRoot: string
   sessionIds: string[]
   refs: string[]
   sourceIds: string[]
+  sessions: OccurrenceSession[]
+  interleaved: boolean
   startedAt: string
   endedAt: string
   durationMinutes: number
@@ -31,6 +39,8 @@ export interface Candidate {
   surfaced: boolean
   occurrences: CandidateOccurrence[]
   evidence: LensEvidence
+  subsumedBy?: string
+  coveredBy?: string
 }
 
 export interface Finding extends Candidate {
@@ -44,6 +54,7 @@ export interface Finding extends Candidate {
 export interface LensOpts {
   sourceIds?: string[]
   since?: string
+  worktreesRoot?: string
 }
 
 export interface Lens {

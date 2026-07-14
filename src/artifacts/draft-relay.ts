@@ -129,6 +129,11 @@ function templateContract(hop: DraftHop, produces: string[]): string {
   return `${lines.join('\n')}\n`
 }
 
+function taskablePrompt(prompt: string): string {
+  if (prompt.includes('{{task}}')) return prompt
+  return `${prompt}\n\n## Task\n\n{{task}}`
+}
+
 function draftPrompt(finding: Finding): string {
   const evidence = {
     occurrenceCount: finding.evidence.occurrenceCount,
@@ -184,7 +189,10 @@ export async function draftRelay(
       }
       usedNames.add(filename)
       const produces = producedFor(hop.role, index, hop.autonomy)
-      templates[filename] = templateContract(hop, produces)
+      templates[filename] = templateContract(
+        index === 0 ? { ...hop, prompt: taskablePrompt(hop.prompt) } : hop,
+        produces
+      )
       return {
         runtime: hop.runtime,
         role: hop.role,
@@ -237,6 +245,11 @@ export function persistedDraft(value: unknown): PersistedDraftedRelay {
     }
   }
   return { slug: value.slug, relayJson: value.relayJson, templates }
+}
+
+export function persistedDraftConsumesTask(draft: PersistedDraftedRelay): boolean {
+  const relay = validateRelay(draft.relayJson, { slug: draft.slug })
+  return relay.hops.some((hop) => draft.templates[hop.promptTemplate]?.includes('{{task}}') ?? false)
 }
 
 async function availableSlug(baseDir: string, requested: string): Promise<string> {

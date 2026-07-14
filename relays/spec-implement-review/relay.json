@@ -1,0 +1,27 @@
+{
+  "slug": "spec-implement-review",
+  "gates": "all-boundaries",
+  "hops": [
+    {
+      "runtime": "claude",
+      "role": "plan",
+      "promptTemplate": "plan.md",
+      "autonomy": "challenge",
+      "produces": ["spec.md", "manifest.json"]
+    },
+    {
+      "runtime": "codex",
+      "role": "implement",
+      "promptTemplate": "implement.md",
+      "autonomy": "autonomous",
+      "produces": ["implementation.md", "implementation-notes.md"]
+    },
+    {
+      "runtime": "claude",
+      "role": "review",
+      "promptTemplate": "review.md",
+      "autonomy": "strict",
+      "produces": ["review.md"]
+    }
+  ]
+}

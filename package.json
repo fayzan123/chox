@@ -13,6 +13,7 @@
   },
   "files": [
     "dist",
+    "relays",
     "src/substrate/schema.sql",
     "README.md",
     "LICENSE"
@@ -30,6 +31,7 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json",
     "postbuild": "node scripts/chmod-bin.mjs",
+    "verify:pack": "npm run build && node scripts/verify-pack.mjs",
     "dev": "tsc --watch",
     "fixtures:redact": "node --experimental-strip-types fixtures/redact.ts",
     "fixtures:verify": "node --experimental-strip-types fixtures/redact.ts --verify"

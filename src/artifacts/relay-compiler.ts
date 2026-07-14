@@ -1,3 +1,5 @@
+import { join } from 'node:path'
+
 import { ChoxUsageError } from '../errors.js'
 import type { Autonomy, Interaction } from './ir.js'
 import type { LoadedRelay } from './relay-loader.js'
@@ -25,7 +27,30 @@ function artifactPath(name: string): string {
   return `${artifactPrefix}${name}`
 }
 
-export function compileRelay(loaded: LoadedRelay): ExecutionPlan {
+export function relayConsumesTask(loaded: LoadedRelay): boolean {
+  return loaded.relay.hops.some((hop) => (
+    loaded.templates.get(hop.promptTemplate)?.includes('{{task}}') ?? false
+  ))
+}
+
+export function compileRelay(
+  loaded: LoadedRelay,
+  opts: { task?: string } = {}
+): ExecutionPlan {
+  const consumesTask = relayConsumesTask(loaded)
+  if (consumesTask && opts.task === undefined) {
+    throw new ChoxUsageError(
+      `Relay ${JSON.stringify(loaded.relay.slug)} requires a task. Pass --task <text> or --task-file <path>.`
+    )
+  }
+  if (!consumesTask && opts.task !== undefined) {
+    const template = loaded.relay.hops[0]?.promptTemplate
+    const path = template ? join(loaded.dir, template) : loaded.dir
+    throw new ChoxUsageError(
+      `Relay ${JSON.stringify(loaded.relay.slug)} does not consume task input. Add {{task}} to its template at ${path}, or run it without --task/--task-file.`
+    )
+  }
+
   const produced = new Set<string>()
   const claimed = new Map<string, number>()
   const problems: string[] = []
@@ -54,6 +79,7 @@ export function compileRelay(loaded: LoadedRelay): ExecutionPlan {
     }
 
     const prompt = template.replace(/{{([^{}]+)}}/g, (placeholder, body: string) => {
+      if (body === 'task') return opts.task ?? placeholder
       if (body === 'produces') return names.map(artifactPath).join(', ')
       if (body === 'repo') return loaded.repoRoot
       if (body.startsWith('artifact:')) {

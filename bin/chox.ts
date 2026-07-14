@@ -1,18 +1,33 @@
 #!/usr/bin/env node
 
-import { stat, readFile, writeFile } from 'node:fs/promises'
+import { stat, readFile, realpath, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { parseArgs } from 'node:util'
+import { parseArgs, TextDecoder } from 'node:util'
 
-import { compileRelay, renderPlan } from '../src/artifacts/relay-compiler.js'
+import {
+  compileRelay,
+  relayConsumesTask,
+  renderPlan
+} from '../src/artifacts/relay-compiler.js'
 import {
   draftRelay,
   installDraftedRelay,
   parseFinding,
-  persistedDraft
+  persistedDraft,
+  persistedDraftConsumesTask
 } from '../src/artifacts/draft-relay.js'
+import {
+  inspectFinding,
+  renderFinding
+} from '../src/artifacts/finding-inspection.js'
+import {
+  catalogRelays,
+  inspectRelay,
+  renderRelayList,
+  renderRelayShow
+} from '../src/artifacts/relay-catalog.js'
 import { loadRelay } from '../src/artifacts/relay-loader.js'
 import { buildBundle, runDoctor } from '../src/doctor.js'
 import { pickEngine, type EngineStats } from '../src/engines/engine.js'
@@ -38,15 +53,56 @@ import { collectStatus, renderStatus } from '../src/status.js'
 import { openSubstrate, type SubstrateStore } from '../src/substrate/store.js'
 
 const usage = `Usage:
-  chox run <slug> [--dry-run] [--resume] [--unattended]
+  chox run <slug> [--task <text> | --task-file <path>] [--dry-run] [--resume] [--unattended]
   chox detect [--source claude-code,codex] [--lens handoff] [--json] [--since 30d]
               [--engine claude|codex] [--model <name>] [--no-confirm]
+  chox relay list [--json]
+  chox relay show <slug> [--prompts] [--json]
+  chox finding show <finding-id> [--prompts] [--json]
   chox install <finding-id>
   chox install --dismiss <finding-id>
   chox doctor [--bundle]
   chox status
   chox --version | --help
 `
+
+const commandHelp: Record<string, string> = {
+  run: `Usage: chox run <slug> [--task <text> | --task-file <path>] [--dry-run] [--resume] [--unattended]
+
+Run a relay in an isolated Git worktree. Task flags are mutually exclusive and cannot
+be used with --resume; resume always uses the persisted compiled plan. Run records in
+~/.chox/runs contain compiled prompts and task text.
+`,
+  detect: `Usage: chox detect [--source claude-code,codex] [--lens handoff] [--json] [--since 30d]
+                   [--engine claude|codex] [--model <name>] [--no-confirm]
+
+Scan local agent histories and inspect or install evidence-backed workflow findings.
+--no-confirm starts no analysis agent. JSON progress and notices use stderr.
+`,
+  relay: `Usage:
+  chox relay list [--json]
+  chox relay show <slug> [--prompts] [--json]
+
+Discover repository, global, and read-only built-in relays. Full template text is
+shown only with --prompts.
+`,
+  finding: `Usage: chox finding show <finding-id> [--prompts] [--json]
+
+Inspect persisted evidence, proposed workflow details, and analysis spend. Full
+prompt text is shown only with --prompts.
+`,
+  doctor: `Usage: chox doctor [--bundle]
+
+Check the local environment. Diagnostic bundles contain allowlisted, redacted probe
+data and never task text, compiled prompts, or commands.
+`,
+  status: `Usage: chox status
+
+Show substrate, run, worktree, and resumable-gate status without changing state.
+`
+}
+
+const maxTaskBytes = 1024 * 1024
 
 export interface CliContext {
   cwd: string
@@ -108,7 +164,9 @@ function parseRun(args: string[]) {
     options: {
       'dry-run': { type: 'boolean' },
       resume: { type: 'boolean' },
-      unattended: { type: 'boolean' }
+      unattended: { type: 'boolean' },
+      task: { type: 'string' },
+      'task-file': { type: 'string' }
     },
     allowPositionals: true,
     strict: true
@@ -119,31 +177,81 @@ function parseRun(args: string[]) {
   if (parsed.values['dry-run'] && parsed.values.resume) {
     throw new ChoxUsageError('--dry-run and --resume cannot be used together')
   }
+  if (parsed.values.task !== undefined && parsed.values['task-file'] !== undefined) {
+    throw new ChoxUsageError('--task and --task-file are mutually exclusive')
+  }
+  if (parsed.values.resume && (parsed.values.task !== undefined || parsed.values['task-file'] !== undefined)) {
+    throw new ChoxUsageError('--task and --task-file cannot be used with --resume; resume uses the persisted plan')
+  }
   return {
     slug: parsed.positionals[0] as string,
     dryRun: parsed.values['dry-run'] ?? false,
     resume: parsed.values.resume ?? false,
-    unattended: parsed.values.unattended ?? false
+    unattended: parsed.values.unattended ?? false,
+    task: parsed.values.task,
+    taskFile: parsed.values['task-file']
   }
+}
+
+function validateTaskText(text: string, label: string): string {
+  const bytes = Buffer.byteLength(text, 'utf8')
+  if (bytes > maxTaskBytes) {
+    throw new ChoxUsageError(`${label} exceeds the 1 MiB limit (1,048,576 bytes)`)
+  }
+  if (text.trim() === '') throw new ChoxUsageError(`${label} must not be empty or whitespace-only`)
+  return text
+}
+
+async function resolveTaskInput(
+  flags: ReturnType<typeof parseRun>,
+  cwd: string
+): Promise<string | undefined> {
+  if (flags.task !== undefined) return validateTaskText(flags.task, '--task')
+  if (flags.taskFile === undefined) return undefined
+  if (flags.taskFile.trim() === '') throw new ChoxUsageError('--task-file requires a path')
+  const path = resolve(cwd, flags.taskFile)
+  let bytes: Buffer
+  try {
+    bytes = await readFile(path)
+  } catch (error) {
+    throw new ChoxUsageError(
+      `Could not read task file ${path}. Ensure it exists and is readable.`,
+      { cause: error }
+    )
+  }
+  if (bytes.byteLength > maxTaskBytes) {
+    throw new ChoxUsageError(`Task file ${path} exceeds the 1 MiB limit (1,048,576 bytes)`)
+  }
+  let text: string
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+  } catch (error) {
+    throw new ChoxUsageError(`Task file ${path} is not valid UTF-8`, { cause: error })
+  }
+  return validateTaskText(text, `Task file ${path}`)
 }
 
 async function runCommand(args: string[], ctx: CliContext): Promise<number> {
   const flags = parseRun(args)
+  const task = await resolveTaskInput(flags, ctx.cwd)
   const repoRoot = await findRepoRoot(ctx.cwd)
   const paths = resolvePaths(ctx.env)
-  if (!flags.dryRun && !flags.unattended && !ctx.stdinIsTTY) {
-    throw new ChoxError('Attended runs require a TTY. Re-run in a terminal or pass --unattended.')
-  }
   const resume = flags.resume ? await findResumableRun(flags.slug, paths) : undefined
   if (flags.resume && !resume) {
     throw new ChoxError(`No resumable run was found for ${flags.slug}.`)
   }
   const plan = resume
     ? { slug: flags.slug, hops: [] }
-    : compileRelay(await loadRelay(flags.slug, { repoRoot, paths }))
+    : compileRelay(
+        await loadRelay(flags.slug, { repoRoot, paths }),
+        task === undefined ? {} : { task }
+      )
   if (flags.dryRun) {
     ctx.stdout(renderPlan(plan))
     return 0
+  }
+  if (!flags.unattended && !ctx.stdinIsTTY) {
+    throw new ChoxError('Attended runs require a TTY. Re-run in a terminal or pass --unattended.')
   }
   const io = ctx.gateIO ?? createTerminalGateIO(ctx.env)
   const result = await executeRun({
@@ -183,6 +291,122 @@ async function statusCommand(args: string[], ctx: CliContext): Promise<number> {
   parseArgs({ args, options: {}, allowPositionals: false, strict: true })
   ctx.stdout(renderStatus(await collectStatus(resolvePaths(ctx.env))))
   return 0
+}
+
+function nextRunCommand(slug: string, taskRequired: boolean): string {
+  return `Next: chox run ${slug}${taskRequired ? ' --task-file <task.md>' : ''} --dry-run`
+}
+
+async function resolvedRelayTaskRequirement(slug: string, ctx: CliContext): Promise<boolean> {
+  const repoRoot = await tryFindRepoRoot(ctx.cwd)
+  try {
+    const loaded = await loadRelay(slug, {
+      ...(repoRoot ? { repoRoot } : {}),
+      paths: resolvePaths(ctx.env)
+    })
+    return relayConsumesTask(loaded)
+  } catch {
+    return false
+  }
+}
+
+async function relayCommand(args: string[], ctx: CliContext): Promise<number> {
+  const [subcommand, ...rest] = args
+  const repoRoot = await tryFindRepoRoot(ctx.cwd)
+  const paths = resolvePaths(ctx.env)
+  if (subcommand === 'list') {
+    const parsed = parseArgs({
+      args: rest,
+      options: { json: { type: 'boolean' } },
+      allowPositionals: false,
+      strict: true
+    })
+    const catalog = await catalogRelays({
+      ...(repoRoot ? { repoRoot } : {}),
+      paths
+    })
+    for (const warning of catalog.warnings) ctx.stderr(`Warning: ${warning}\n`)
+    if (parsed.values.json) {
+      ctx.stdout(`${JSON.stringify({ schemaVersion: 1, ...catalog })}\n`)
+    } else {
+      ctx.stdout(renderRelayList(catalog))
+    }
+    return 0
+  }
+  if (subcommand === 'show') {
+    const parsed = parseArgs({
+      args: rest,
+      options: {
+        prompts: { type: 'boolean' },
+        json: { type: 'boolean' }
+      },
+      allowPositionals: true,
+      strict: true
+    })
+    if (parsed.positionals.length !== 1) {
+      throw new ChoxUsageError('chox relay show requires exactly one relay slug')
+    }
+    const relay = await inspectRelay({
+      slug: parsed.positionals[0] as string,
+      ...(repoRoot ? { repoRoot } : {}),
+      paths,
+      prompts: parsed.values.prompts ?? false
+    })
+    if (parsed.values.json) ctx.stdout(`${JSON.stringify({ schemaVersion: 1, relay })}\n`)
+    else ctx.stdout(renderRelayShow(relay))
+    return 0
+  }
+  throw new ChoxUsageError('chox relay requires list or show <slug>')
+}
+
+async function findingCommand(args: string[], ctx: CliContext): Promise<number> {
+  const [subcommand, ...rest] = args
+  if (subcommand !== 'show') throw new ChoxUsageError('chox finding requires show <finding-id>')
+  const parsed = parseArgs({
+    args: rest,
+    options: {
+      prompts: { type: 'boolean' },
+      json: { type: 'boolean' }
+    },
+    allowPositionals: true,
+    strict: true
+  })
+  if (parsed.positionals.length !== 1) {
+    throw new ChoxUsageError('chox finding show requires exactly one finding id')
+  }
+  const findingId = parsed.positionals[0] as string
+  const paths = resolvePaths(ctx.env)
+  const store = openSubstrate(paths)
+  try {
+    const stored = store.getFinding(findingId)
+    if (!stored) throw new ChoxUsageError(`Finding ${JSON.stringify(findingId)} was not found`)
+    const repoRoot = await tryFindRepoRoot(ctx.cwd)
+    const inspection = await inspectFinding({
+      stored,
+      ...(repoRoot ? { repoRoot } : {}),
+      paths,
+      prompts: parsed.values.prompts ?? false
+    })
+    if (parsed.values.json) {
+      ctx.stdout(`${JSON.stringify(inspection)}\n`)
+      return 0
+    }
+    ctx.stdout(renderFinding(inspection))
+    if (inspection.coveredBy) {
+      ctx.stdout(`Inspect: chox relay show ${inspection.coveredBy}\n`)
+      ctx.stdout(`${nextRunCommand(
+        inspection.coveredBy,
+        inspection.workflow?.taskRequired ?? false
+      )}\n`)
+    } else if (inspection.state === 'suggested' && inspection.workflow) {
+      ctx.stdout(`Install: chox install ${inspection.id}\n`)
+    } else if (inspection.state === 'installed' && inspection.workflow) {
+      ctx.stdout(`${nextRunCommand(inspection.workflow.slug, inspection.workflow.taskRequired)}\n`)
+    }
+    return 0
+  } finally {
+    store.close()
+  }
 }
 
 function commaValues(value: string | undefined): string[] {
@@ -325,13 +549,14 @@ async function installFinding(
   findingId: string,
   store: SubstrateStore,
   ctx: CliContext
-): Promise<{ slug: string, dir: string }> {
+): Promise<{ slug: string, dir: string, taskRequired: boolean }> {
   const stored = store.getFinding(findingId)
   if (!stored) throw new ChoxUsageError(`Finding ${JSON.stringify(findingId)} was not found`)
   if (stored.status === 'dismissed') throw new ChoxUsageError(`Finding ${findingId} is dismissed`)
   const finding = parseFinding(stored.payload)
   const payload = stored.payload as Record<string, unknown>
   const draft = persistedDraft(payload.draftedRelay)
+  const taskRequired = persistedDraftConsumesTask(draft)
   const repoRoot = await tryFindRepoRoot(ctx.cwd)
   const local = repoRoot !== undefined
     && finding.evidence.repos.some((repo) => resolve(repo) === resolve(repoRoot))
@@ -339,13 +564,14 @@ async function installFinding(
   const baseDir = local && repoRoot
     ? join(repoRoot, '.chox', 'relays')
     : paths.relays
-  return installDraftedRelay({
+  const installed = await installDraftedRelay({
     store,
     findingId,
     draft,
     baseDir,
     version: await packageVersion()
   })
+  return { ...installed, taskRequired }
 }
 
 async function detectCommand(args: string[], ctx: CliContext): Promise<number> {
@@ -437,12 +663,23 @@ async function detectCommand(args: string[], ctx: CliContext): Promise<number> {
           progress(`drafting ${finding.id} …\n`)
           try {
             const drafted = await draftRelay(finding, engine)
+            const draftCalls = engine.stats().calls - callsBefore
             const persisted = {
               slug: drafted.slug,
               relayJson: drafted.relayJson,
               templates: drafted.templates
             }
-            const enriched = { ...finding, draftedRelay: persisted }
+            const enriched = {
+              ...finding,
+              draftedRelay: persisted,
+              inspection: {
+                engine: engine.id,
+                model: engine.model ?? 'CLI default',
+                callCeiling: 3,
+                calls: finding.engineCalls + draftCalls,
+                usage: engine.stats().usage
+              }
+            }
             store.upsertFinding({
               id: finding.id,
               lens: 'handoff',
@@ -453,7 +690,7 @@ async function detectCommand(args: string[], ctx: CliContext): Promise<number> {
             })
             findings.push(enriched)
             progress(
-              `drafted ${finding.id} (${engine.stats().calls - callsBefore} additional call(s))\n`
+              `drafted ${finding.id} (${draftCalls} additional call(s))\n`
             )
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error)
@@ -550,7 +787,14 @@ async function detectCommand(args: string[], ctx: CliContext): Promise<number> {
     } else if (candidates.length > 0 && missingEngine) {
       ctx.stdout('No analysis engine is available; candidates are unconfirmed. Install Claude Code or Codex CLI, then rerun detect, or use --no-confirm.\n')
     }
-    for (const candidate of covered) ctx.stdout(`${coveredFindingLine(candidate)}\n`)
+    for (const candidate of covered) {
+      ctx.stdout(`${coveredFindingLine(candidate)}\n`)
+      if (candidate.coveredBy) {
+        const taskRequired = await resolvedRelayTaskRequirement(candidate.coveredBy, ctx)
+        ctx.stdout(`Inspect: chox relay show ${candidate.coveredBy}\n`)
+        ctx.stdout(`${nextRunCommand(candidate.coveredBy, taskRequired)}\n`)
+      }
+    }
     for (const finding of findings) ctx.stdout(`${findingLine(finding, 'confirmed')}\n`)
     for (const candidate of unconfirmed) ctx.stdout(`${findingLine(candidate, 'unconfirmed')}\n`)
     if (rejectedCount > 0) {
@@ -564,19 +808,35 @@ async function detectCommand(args: string[], ctx: CliContext): Promise<number> {
       ctx.stdout(`Engine spend: ${engineStats.calls} call(s); tokens: ${usageText(engineStats)}.\n`)
     }
 
-    if (findings.length > 0 && ctx.stdinIsTTY) {
+    if (findings.length > 0 && !flags.json && ctx.stdinIsTTY) {
       const io = ctx.gateIO ?? createTerminalGateIO(ctx.env)
       for (const finding of findings) {
-        const action = await io.readKey(
-          `Finding ${finding.id}: [i]nstall [d]ismiss [s]kip `,
-          ['i', 'd', 's']
-        )
-        if (action === 'i') {
-          const installed = await installFinding(finding.id, store, ctx)
-          ctx.stdout(`Installed relay ${installed.slug} at ${installed.dir}\n`)
-        } else if (action === 'd') {
-          store.updateFindingStatus(finding.id, 'dismissed')
-          ctx.stdout(`Dismissed finding ${finding.id}.\n`)
+        while (true) {
+          const action = await io.readKey(
+            `Finding ${finding.id}: [v]iew [i]nstall [d]ismiss [s]kip `,
+            ['v', 'i', 'd', 's']
+          )
+          if (action === 'v') {
+            const stored = store.getFinding(finding.id)
+            if (!stored) throw new ChoxError(`Finding ${finding.id} disappeared during inspection`)
+            const repoRoot = await tryFindRepoRoot(ctx.cwd)
+            ctx.stdout(renderFinding(await inspectFinding({
+              stored,
+              ...(repoRoot ? { repoRoot } : {}),
+              paths,
+              prompts: false
+            })))
+            continue
+          }
+          if (action === 'i') {
+            const installed = await installFinding(finding.id, store, ctx)
+            ctx.stdout(`Installed relay ${installed.slug} at ${installed.dir}\n`)
+            ctx.stdout(`${nextRunCommand(installed.slug, installed.taskRequired)}\n`)
+          } else if (action === 'd') {
+            store.updateFindingStatus(finding.id, 'dismissed')
+            ctx.stdout(`Dismissed finding ${finding.id}.\n`)
+          }
+          break
         }
       }
     } else {
@@ -612,6 +872,7 @@ async function installCommand(args: string[], ctx: CliContext): Promise<number> 
     }
     const installed = await installFinding(findingId, store, ctx)
     ctx.stdout(`Installed relay ${installed.slug} at ${installed.dir}\n`)
+    ctx.stdout(`${nextRunCommand(installed.slug, installed.taskRequired)}\n`)
     return 0
   } finally {
     store.close()
@@ -629,8 +890,14 @@ export async function runCli(args: string[], ctx: CliContext): Promise<number> {
       return 0
     }
     const [command, ...rest] = args
+    if (command && rest.length === 1 && rest[0] === '--help' && commandHelp[command]) {
+      ctx.stdout(commandHelp[command])
+      return 0
+    }
     if (command === 'run') return await runCommand(rest, ctx)
     if (command === 'detect') return await detectCommand(rest, ctx)
+    if (command === 'relay') return await relayCommand(rest, ctx)
+    if (command === 'finding') return await findingCommand(rest, ctx)
     if (command === 'install') return await installCommand(rest, ctx)
     if (command === 'doctor') return await doctorCommand(rest, ctx)
     if (command === 'status') return await statusCommand(rest, ctx)
@@ -659,6 +926,11 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
 }
 
 const invokedPath = process.argv[1]
-if (invokedPath && resolve(fileURLToPath(import.meta.url)) === resolve(invokedPath)) {
+const invokedRealPath = invokedPath
+  ? await realpath(invokedPath).catch(() => resolve(invokedPath))
+  : undefined
+const moduleRealPath = await realpath(fileURLToPath(import.meta.url))
+  .catch(() => resolve(fileURLToPath(import.meta.url)))
+if (invokedRealPath && resolve(moduleRealPath) === resolve(invokedRealPath)) {
   process.exitCode = await main()
 }

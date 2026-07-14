@@ -161,6 +161,9 @@ export function renderStatus(report: StatusReport): string {
     lines.push(
       `  Relay findings: ${stats.findingsByStatus.suggested} suggested, ${stats.findingsByStatus.dismissed} dismissed, ${stats.findingsByStatus.exported} exported`
     )
+    if ((report.substrate.toolInvokedSessions ?? 0) > 0) {
+      lines.push(`  Tool-invoked sessions: ${report.substrate.toolInvokedSessions} (excluded from handoff detection)`)
+    }
     const diagnostics = sourceIds.flatMap((id) => {
       const source = stats.diagnosticsBySource[id]
       if (!source) return []

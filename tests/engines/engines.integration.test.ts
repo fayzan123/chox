@@ -51,6 +51,24 @@ describe('analysis engines', () => {
     ])
   })
 
+  test('an explicit Claude model overrides ANTHROPIC_MODEL', async () => {
+    const root = await makeTempDir()
+    const fake = await installFakeAgents(root)
+    await setFakeAgentScript(fake.scriptPath, {
+      stdout: [{ type: 'result', result: '{"confirmed":false}' }]
+    })
+    const engine = createClaudeEngine(
+      { ...fake.env, ANTHROPIC_MODEL: 'environment-model' },
+      { model: 'sonnet-test' }
+    )
+
+    expect(engine.model).toBe('sonnet-test')
+    await engine.analyze('candidate')
+    const invocation = JSON.parse(await readFile(fake.argvPath, 'utf8')) as { args: string[] }
+    expect(invocation.args.slice(invocation.args.indexOf('--model'), invocation.args.indexOf('--model') + 2))
+      .toEqual(['--model', 'sonnet-test'])
+  })
+
   test('Claude requests and returns validated structured output when given a schema', async () => {
     const root = await makeTempDir()
     const fake = await installFakeAgents(root)
@@ -100,6 +118,24 @@ describe('analysis engines', () => {
     expect(invocation.args).toEqual([
       '--sandbox', 'read-only', '--ask-for-approval', 'never', 'exec', '--json', '-'
     ])
+    expect(engine.model).toBeUndefined()
+    expect(invocation.args).not.toContain('-c')
+  })
+
+  test('Codex passes an explicit model config before the exec subcommand', async () => {
+    const root = await makeTempDir()
+    const fake = await installFakeAgents(root)
+    await setFakeAgentScript(fake.scriptPath, {
+      stdout: [{ type: 'item.completed', item: { type: 'agent_message', text: '{"confirmed":false}' } }]
+    })
+    const engine = createCodexEngine(fake.env, { model: 'gpt-test' })
+
+    expect(engine.model).toBe('gpt-test')
+    await engine.analyze('candidate')
+    const invocation = JSON.parse(await readFile(fake.argvPath, 'utf8')) as { args: string[] }
+    expect(invocation.args.slice(invocation.args.indexOf('-c'), invocation.args.indexOf('-c') + 2))
+      .toEqual(['-c', 'model=gpt-test'])
+    expect(invocation.args.indexOf('-c')).toBeLessThan(invocation.args.indexOf('exec'))
   })
 
   test('invalid engine output and timeout are clean finding-level failures', async () => {
@@ -119,5 +155,6 @@ describe('analysis engines', () => {
     const fake = await installFakeAgents(root)
     expect((await pickEngine(undefined, fake.env))?.id).toBe('claude')
     expect((await pickEngine('codex', fake.env))?.id).toBe('codex')
+    expect((await pickEngine('codex', fake.env, { model: 'gpt-picked' }))?.model).toBe('gpt-picked')
   })
 })

@@ -1,9 +1,14 @@
-import { readdir, stat } from 'node:fs/promises'
+import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { afterEach, expect, test } from 'vitest'
 
+import {
+  findCoveringRelay,
+  resolveInstalledRelayShapes,
+  sourceRuntime
+} from '../../src/lenses/handoff/covered.js'
 import { scanHandoff } from '../../src/lenses/handoff/scan.js'
 import { resolvePaths } from '../../src/paths.js'
 import { claudeCodeSource } from '../../src/sources/claude-code.js'
@@ -31,7 +36,8 @@ async function fixtureRef(source: SessionSource, fileRef: string): Promise<Sessi
 
 test('the founder-redacted corpus surfaces a cross-agent handoff candidate', async () => {
   const root = await makeTempDir()
-  const store = openSubstrate(resolvePaths({ CHOX_HOME: join(root, 'chox-home') }))
+  const paths = resolvePaths({ CHOX_HOME: join(root, 'chox-home') })
+  const store = openSubstrate(paths)
   for (const [source, dir] of fixtureDirs) {
     store.upsertSource({ id: source.id, kind: source.id, rootPath: dir })
     const files = (await readdir(dir)).filter((name) => name.endsWith('.jsonl')).sort()
@@ -48,5 +54,30 @@ test('the founder-redacted corpus surfaces a cross-agent handoff candidate', asy
     && chain.includes('codex')
     && (evidence.sessionCount >= 3 || evidence.repos.length >= 2)
   ))).toBe(true)
+
+  const candidate = candidates.find(({ chain }) => (
+    chain.includes('claude-code') && chain.includes('codex')
+  ))
+  expect(candidate).toBeDefined()
+  const slug = 'founder-loop'
+  const relayDir = join(paths.relays, slug)
+  await mkdir(relayDir, { recursive: true })
+  const runtimes = candidate!.chain.map((sourceId) => sourceRuntime[sourceId] ?? sourceId)
+  const hops = runtimes.map((runtime, index) => ({
+    runtime,
+    role: `role-${index + 1}`,
+    promptTemplate: `hop-${index + 1}.md`,
+    autonomy: 'autonomous',
+    produces: [`artifact-${index + 1}.md`]
+  }))
+  await writeFile(join(relayDir, 'relay.json'), JSON.stringify({ slug, hops }))
+  await Promise.all(hops.map(async (hop, index) => {
+    await writeFile(join(relayDir, hop.promptTemplate), `Prompt ${index + 1}`)
+  }))
+  const shapes = await resolveInstalledRelayShapes({
+    repoRoots: candidate!.evidence.repos,
+    paths
+  })
+  expect(findCoveringRelay(candidate!, shapes)).toBe(slug)
   store.close()
 })

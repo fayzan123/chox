@@ -1,9 +1,20 @@
 import { createHash } from 'node:crypto'
 
 import { digestSimilarity, intentSimilarityThreshold } from '../../digest.js'
-import type { StoredSession, SubstrateStore } from '../../substrate/store.js'
-import type { Candidate, CandidateOccurrence, LensEvidence, LensOpts } from '../lens.js'
+import {
+  isToolInvokedSession,
+  type StoredSession,
+  type SubstrateStore
+} from '../../substrate/store.js'
+import type {
+  Candidate,
+  CandidateOccurrence,
+  LensEvidence,
+  LensOpts,
+  OccurrenceSession
+} from '../lens.js'
 import { correlatedSessionEnds } from './git-correlation.js'
+import { applySubsumption } from './subsume.js'
 
 const chainWindowMs = 6 * 60 * 60 * 1000
 
@@ -11,15 +22,24 @@ interface SessionChain {
   sessions: StoredSession[]
 }
 
-function isToolInvoked(session: StoredSession): boolean {
-  return session.sourceId === 'codex'
-    && (session.originator === 'codex_exec' || session.meta.toolInvoked === true)
+export interface HandoffScanReport {
+  surfaced: Candidate[]
+  subsumed: Candidate[]
+  belowFloor: number
+  toolInvokedExcluded: number
 }
 
-function groupByRepo(sessions: StoredSession[]): Map<string, StoredSession[]> {
+function groupByRepo(
+  sessions: StoredSession[],
+  worktreesRoot?: string
+): { repos: Map<string, StoredSession[]>, toolInvokedExcluded: number } {
   const repos = new Map<string, StoredSession[]>()
+  let toolInvokedExcluded = 0
   for (const session of sessions) {
-    if (isToolInvoked(session)) continue
+    if (isToolInvokedSession(session, worktreesRoot)) {
+      toolInvokedExcluded += 1
+      continue
+    }
     const current = repos.get(session.repoRoot) ?? []
     current.push(session)
     repos.set(session.repoRoot, current)
@@ -27,7 +47,28 @@ function groupByRepo(sessions: StoredSession[]): Map<string, StoredSession[]> {
   for (const values of repos.values()) {
     values.sort((left, right) => left.startedAt.localeCompare(right.startedAt))
   }
-  return repos
+  return { repos, toolInvokedExcluded }
+}
+
+function positiveOverlap(a: OccurrenceSession, b: OccurrenceSession): boolean {
+  const start = Math.max(Date.parse(a.startedAt), Date.parse(b.startedAt))
+  const end = Math.min(Date.parse(a.endedAt), Date.parse(b.endedAt))
+  return end > start
+}
+
+export function renderOccurrenceChain(occurrence: CandidateOccurrence): string {
+  const parts: string[] = []
+  occurrence.sessions.forEach((session, index) => {
+    if (index === 0) {
+      parts.push(session.sourceId)
+      return
+    }
+    const previous = occurrence.sessions[index - 1]
+    parts.push(previous && positiveOverlap(previous, session)
+      ? `⇄ ${session.sourceId} (concurrent)`
+      : `→ ${session.sourceId}`)
+  })
+  return parts.join(' ')
 }
 
 function alternatingChains(sessions: StoredSession[]): SessionChain[] {
@@ -105,11 +146,21 @@ async function occurrence(chain: SessionChain): Promise<CandidateOccurrence> {
   const durationMinutes = chain.sessions.reduce((sum, session) => {
     return sum + Math.max(0, Date.parse(session.endedAt) - Date.parse(session.startedAt)) / 60_000
   }, 0)
+  const sessions = chain.sessions.map(({ sourceId, startedAt, endedAt }) => ({
+    sourceId,
+    startedAt,
+    endedAt
+  }))
+  const interleaved = sessions.some((session, index) => (
+    sessions.slice(index + 1).some((other) => positiveOverlap(session, other))
+  ))
   return {
     repoRoot: first.repoRoot,
     sessionIds: chain.sessions.map(({ id }) => id),
     refs: chain.sessions.map(({ ref }) => ref),
     sourceIds: chain.sessions.map(({ sourceId }) => sourceId),
+    sessions,
+    interleaved,
     startedAt: first.startedAt,
     endedAt: last.endedAt,
     durationMinutes: Math.round(durationMinutes * 100) / 100,
@@ -119,16 +170,24 @@ async function occurrence(chain: SessionChain): Promise<CandidateOccurrence> {
   }
 }
 
-export async function scanHandoff(
+function sortCandidates(candidates: Candidate[]): Candidate[] {
+  return candidates.sort((left, right) => {
+    const weight = (right.occurrences[0]?.weight ?? 0) - (left.occurrences[0]?.weight ?? 0)
+    return weight || left.id.localeCompare(right.id)
+  })
+}
+
+export async function scanHandoffReport(
   store: SubstrateStore,
   opts: LensOpts = {}
-): Promise<Candidate[]> {
+): Promise<HandoffScanReport> {
   const sessions = store.listSessions({
     ...(opts.sourceIds ? { sourceIds: opts.sourceIds } : {}),
     ...(opts.since ? { since: opts.since } : {})
   })
+  const grouped = groupByRepo(sessions, opts.worktreesRoot)
   const byPattern = new Map<string, CandidateOccurrence[]>()
-  for (const repoSessions of groupByRepo(sessions).values()) {
+  for (const repoSessions of grouped.repos.values()) {
     for (const chain of alternatingChains(repoSessions)) {
       const item = await occurrence(chain)
       const pattern = item.sourceIds.join('>')
@@ -138,7 +197,8 @@ export async function scanHandoff(
     }
   }
 
-  const surfaced: Candidate[] = []
+  const candidates: Candidate[] = []
+  let belowFloor = 0
   for (const [pattern, occurrences] of byPattern) {
     occurrences.sort((left, right) => right.weight - left.weight || left.startedAt.localeCompare(right.startedAt))
     const candidateEvidence = evidence(occurrences)
@@ -152,6 +212,12 @@ export async function scanHandoff(
       occurrences,
       evidence: candidateEvidence
     }
+    candidates.push(candidate)
+    if (!meetsFloor) belowFloor += 1
+  }
+
+  applySubsumption(candidates.filter((candidate) => candidate.surfaced))
+  for (const candidate of candidates) {
     store.upsertFinding({
       id: candidate.id,
       lens: 'handoff',
@@ -160,10 +226,22 @@ export async function scanHandoff(
       status: 'suggested',
       payload: candidate
     })
-    if (meetsFloor) surfaced.push(candidate)
   }
-  return surfaced.sort((left, right) => {
-    const weight = (right.occurrences[0]?.weight ?? 0) - (left.occurrences[0]?.weight ?? 0)
-    return weight || left.id.localeCompare(right.id)
-  })
+  return {
+    surfaced: sortCandidates(candidates.filter((candidate) => (
+      candidate.surfaced && candidate.subsumedBy === undefined
+    ))),
+    subsumed: sortCandidates(candidates.filter((candidate) => (
+      candidate.surfaced && candidate.subsumedBy !== undefined
+    ))),
+    belowFloor,
+    toolInvokedExcluded: grouped.toolInvokedExcluded
+  }
+}
+
+export async function scanHandoff(
+  store: SubstrateStore,
+  opts: LensOpts = {}
+): Promise<Candidate[]> {
+  return (await scanHandoffReport(store, opts)).surfaced
 }

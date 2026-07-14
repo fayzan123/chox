@@ -8,6 +8,10 @@ export interface EngineOpts {
   jsonSchema?: Record<string, unknown>
 }
 
+export interface EngineCreateOpts {
+  model?: string
+}
+
 export interface EngineUsage {
   inputTokens?: number
   cachedInputTokens?: number
@@ -134,17 +138,18 @@ async function binaryPresent(binary: string, env: NodeJS.ProcessEnv): Promise<bo
 
 export async function pickEngine(
   preference: 'claude' | 'codex' | undefined,
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  opts: EngineCreateOpts = {}
 ): Promise<AnalysisEngine | undefined> {
   const order = preference ? [preference] : ['claude', 'codex'] as const
   for (const id of order) {
     if (!await binaryPresent(id, env)) continue
     if (id === 'claude') {
       const { createClaudeEngine } = await import('./claude.js')
-      return createClaudeEngine(env)
+      return createClaudeEngine(env, opts)
     }
     const { createCodexEngine } = await import('./codex.js')
-    return createCodexEngine(env)
+    return createCodexEngine(env, opts)
   }
   return undefined
 }

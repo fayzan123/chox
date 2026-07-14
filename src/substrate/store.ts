@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 
 import { ChoxError } from '../errors.js'
-import type { ChoxPaths } from '../paths.js'
+import { isPathInside, type ChoxPaths } from '../paths.js'
 import type { ParsedSession, SourceDiagnostics } from '../sources/source.js'
 
 export type FindingStatus = 'suggested' | 'dismissed' | 'exported'
@@ -66,6 +66,7 @@ export interface SubstrateHealth {
   present: boolean
   stats?: SubstrateStats
   problem?: string
+  toolInvokedSessions?: number
 }
 
 export interface SubstrateStore {
@@ -188,6 +189,18 @@ function sessionFromRow(row: SessionRow): StoredSession {
     meta: parseObject(row.meta_json, 'session metadata'),
     intentDigest: row.intent_digest
   }
+}
+
+export function isToolInvokedSession(
+  session: Pick<StoredSession, 'sourceId' | 'originator' | 'cwd' | 'repoRoot' | 'meta'>,
+  worktreesRoot?: string
+): boolean {
+  if (
+    session.sourceId === 'codex'
+    && (session.originator === 'codex_exec' || session.meta.toolInvoked === true)
+  ) return true
+  if (!worktreesRoot) return false
+  return isPathInside(session.cwd, worktreesRoot) || isPathInside(session.repoRoot, worktreesRoot)
 }
 
 function findingFromRow(row: FindingRow): StoredFinding {
@@ -513,9 +526,11 @@ export function readSubstrateHealth(paths: ChoxPaths): SubstrateHealth {
     db = new DatabaseSync(paths.substrate, { readOnly: true })
     const store = new SqliteSubstrateStore(db)
     const stats = store.stats()
+    const toolInvokedSessions = store.listSessions()
+      .filter((session) => isToolInvokedSession(session, paths.worktrees)).length
     store.close()
     db = undefined
-    return { present: true, stats }
+    return { present: true, stats, toolInvokedSessions }
   } catch {
     try {
       db?.close()

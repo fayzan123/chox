@@ -52,10 +52,14 @@ present on stderr.
 5. `docs/plans/challenge-notes-1b1.md` for the approved privacy wording adjustment
    and implementation judgments.
 
-## Remaining founder work
+## Founder acceptance
 
-- Run live `detect` against the founder-controlled histories and verify the installed
-  relay is reported covered without spawning analysis.
-- Confirm the concurrent-session rendering against any live overlapping occurrence.
-- Continue the Phase 1b two-week exported/dismissed quality measurement and record the
-  cross-agent demo; no real vendor history or live analysis was used in this hop.
+**ACCEPTED (2026-07-14).** The founder reran live `detect` against the
+founder-controlled histories and reported that the hardened result returned as
+expected. The installed canonical loop was recognized as covered, no rival relay or
+semantic repair was needed, and the Phase 1b.1 live re-judgment passed.
+
+Phase 1b.1 is closed. The broader Phase 1b follow-through remains separate: confirm
+concurrency rendering against a live overlapping occurrence when one exists, finish
+the two-week exported/dismissed quality measurement, record the cross-agent demo, and
+verify the npm handle before the Phase 1c package decision.

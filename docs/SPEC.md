@@ -638,6 +638,16 @@ chox/
 Each phase ships something user zero runs that week; each gate = "does user zero use
 it weekly?" Each phase gets a plan doc first.
 
+**Execution-roadmap note (2026-07-14):** `docs/ROADMAP.md` is the active sequencing
+and product-gates document after Phase 1b.1. It inserts taskable first-run, external
+alpha, and flagship-depth milestones before the broader lenses/daemon/app work below.
+It also defers the first public package until the Phase 1c packed, taskable journey
+passes; Phase 1b still owns the handle decision and detection evidence.
+The phase descriptions in this section remain the canonical intent and historical
+record. Before implementing an affected later phase, add a dated amendment here that
+reconciles its build packet with the evidence-backed order in the roadmap; do not
+rewrite the earlier phase history.
+
 **Phase 1a — The relay runtime (no detection yet).**
 Scaffold + CI; relay IR + compiler; harness with gates (§2.2), autonomy enforcement
 (§2.1), worktree isolation, run events; `claude` and `codex` runtimes; `chox run`
@@ -682,6 +692,11 @@ quality targets in §2.6 hold over two weeks of use; the cross-agent demo record
 exists (the artifact no single-vendor tool can produce). npm handle verified and
 first publish happens here.
 
+**Publish amendment (2026-07-14):** Phase 1b still verifies the handle and completes
+the detection/demo evidence, but the first public package moves to Phase 1c. The
+packed artifact must accept a real task and include an immediately runnable starter
+relay; a source-ready detector without that activation path is not the first release.
+
 **Phase 1b.1 — Detection hardening from the first acceptance run (added 2026-07-13).**
 The first live run (user zero, 2026-07-13) passed the demo gate mechanically — the
 loop was found with honest evidence, confirmed, installed, and its dry-run compiled —
@@ -700,6 +715,31 @@ detect. Plan: `docs/plans/phase-1b1-build-packet.md`.
 occurrences, one finding per underlying loop, the hand-authored loop reported as
 covered by its installed relay (or a draft user zero runs without semantic edits).
 The 1b demo recording and two-week §2.6 window begin only after this passes.
+
+**ACCEPTED (2026-07-14).** The founder reran live `detect` and reported that the
+hardened result returned as expected: the installed canonical loop was recognized as
+covered and required no rival draft or semantic repair. Phase 1b.1 is closed. The
+Phase 1b demo, two-week detection-quality window, and handle verification remain
+follow-through work and do not reopen 1b.1.
+
+**Phase 1c — Taskable first run (added 2026-07-14; `docs/ROADMAP.md` Milestone 1).**
+Inserted between 1b.1 and Phase 2 per the execution-roadmap note above; the first
+public package moves here per the 2026-07-14 publish amendment. Scope: `chox run
+<slug> --task <text>|--task-file <path>` with a `{{task}}` template placeholder
+(single-pass substitution, validated before worktree creation, persisted in the run
+plan for exact dry-run/resume parity); a read-only built-in `spec-implement-review`
+starter shipped in the package with resolution order repo-local → global →
+built-in; `chox relay list|show` and `chox finding show` (+ interactive `[v]iew`)
+discovery/inspection surfaces; the external installed-package onboarding path; and
+verification of the actual packed tarball in an isolated prefix. Explicitly out:
+generic parameter schemas, relay lifecycle beyond list/show, fix loops, new
+sources/engines/lenses, daemon, app. Plan: `docs/plans/phase-1c-build-packet.md`.
+*Accept:* a clean-machine rehearsal installs the packed artifact without the source
+repo, discovers and inspects the starter, supplies a real task from a file, previews
+the exact compiled prompts, reaches the first native agent session with that task,
+resumes an interrupted run on the same compiled plan, and edits no relay source
+files. Founder-judged live; publish and alpha recruitment follow only after it
+passes.
 
 **Phase 2 — Profile sync + shared context + minimal repetition.**
 Vendor memory-store readers (`~/.codex/memories*`, Claude Code memory — location/

@@ -1,12 +1,6 @@
-# Review the implementation
+<!-- generatedBy: chox@0.0.0, finding: handoff-cd139200d693a8e8 -->
+Review this task's implementation against its original brief/plan and manifest: first verify it matches requirements, then assess whether it is well-built (correctness, constraint adherence, no regressions). Read the implementer's challenge notes and confirm each deviation was justified. Produce a pass/fail verdict with specific issues called out.
 
-Review the worktree against {{artifact:spec.md}}, {{artifact:manifest.json}}, the
-implementation handoff at {{artifact:implementation.md}}, and the implementer's
-notes at {{artifact:challenge-notes.md}}.
-
-Check correctness, regressions, tests, security, and whether every deviation is
-justified. Do not rewrite the implementation in this hop. Write a prioritized review
-with file references and a clear ship/block recommendation to {{produces}}.
-
-When every declared output above is written, end your final message with exactly:
-"This hop is done — exit this session (/exit or Ctrl-D) to continue the relay."
+## Chox output contract
+- Review the implementation against the persisted spec, manifest, and challenge notes.
+- Produce: {{produces}}

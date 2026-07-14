@@ -1,12 +1,7 @@
-# Implement the approved plan
+<!-- generatedBy: chox@0.0.0, finding: handoff-cd139200d693a8e8 -->
+Implement exactly the plan and manifest handed to you. As you work, keep running challenge notes: record any point where you deviated from the plan, hit a blocker, made a judgment call, or found the plan underspecified, along with your reasoning. Deliver the implementation plus the challenge notes.
 
-Read the approved spec at {{artifact:spec.md}} and its strict manifest at
-{{artifact:manifest.json}}. Implement the feature in the current worktree, keeping
-the repository's conventions and the manifest's mechanical boundaries in view.
-
-Run the manifest's verification commands. Write a concise implementation handoff and
-the required deviation record to: {{produces}}. The challenge notes must be non-empty;
-if there were no deviations, state that explicitly.
-
-When every declared output above is written, end your final message with exactly:
-"This hop is done — exit this session (/exit or Ctrl-D) to continue the relay."
+## Chox output contract
+- Implement against the prior spec and manifest.
+- Record every intentional departure and its rationale in .chox-run/challenge-notes-2.md.
+- Produce: {{produces}}

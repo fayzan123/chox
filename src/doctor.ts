@@ -6,6 +6,7 @@ import { randomBytes } from 'node:crypto'
 
 import { ensureChoxHome, type ChoxPaths } from './paths.js'
 import { redact } from './redact.js'
+import { readSubstrateHealth } from './substrate/store.js'
 import { runCommand } from './system/command.js'
 
 export interface Probe {
@@ -109,6 +110,35 @@ async function runHealth(paths: ChoxPaths): Promise<{ orphans: number, unreadabl
   return { orphans, unreadable }
 }
 
+function substrateProbe(paths: ChoxPaths): Probe {
+  const health = readSubstrateHealth(paths)
+  if (!health.present) {
+    return {
+      name: 'Substrate',
+      ok: true,
+      critical: false,
+      detail: 'not initialized — run chox detect to scan local sessions'
+    }
+  }
+  if (health.problem || !health.stats) {
+    return {
+      name: 'Substrate',
+      ok: false,
+      critical: false,
+      detail: 'unreadable or corrupt — delete substrate.db under CHOX_HOME to rebuild it (it is a cache)'
+    }
+  }
+  const sessions = Object.values(health.stats.sessionsBySource)
+    .reduce((sum, count) => sum + count, 0)
+  const findings = health.stats.findingsByStatus
+  return {
+    name: 'Substrate',
+    ok: true,
+    critical: false,
+    detail: `readable and queryable — ${sessions} sessions; ${findings.suggested} suggested, ${findings.dismissed} dismissed, ${findings.exported} exported relay findings`
+  }
+}
+
 export async function runDoctor(opts: {
   paths: ChoxPaths
   env: NodeJS.ProcessEnv
@@ -173,12 +203,7 @@ export async function runDoctor(opts: {
     critical: false,
     detail: `${health.orphans} orphaned worktrees; ${health.unreadable} unreadable run directories`
   })
-  probes.push({
-    name: 'Substrate',
-    ok: true,
-    critical: false,
-    detail: 'not initialized — ships in Phase 1b'
-  })
+  probes.push(substrateProbe(opts.paths))
   return probes
 }
 

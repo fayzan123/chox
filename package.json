@@ -11,12 +11,28 @@
   "bin": {
     "chox": "dist/bin/chox.js"
   },
+  "files": [
+    "dist",
+    "src/substrate/schema.sql",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "ai-agents",
+    "cli",
+    "local-first",
+    "cross-agent",
+    "developer-tools",
+    "workflow"
+  ],
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json",
     "postbuild": "node scripts/chmod-bin.mjs",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "fixtures:redact": "node --experimental-strip-types fixtures/redact.ts",
+    "fixtures:verify": "node --experimental-strip-types fixtures/redact.ts --verify"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

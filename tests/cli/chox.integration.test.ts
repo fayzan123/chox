@@ -110,7 +110,7 @@ test('status on an empty home exits 0 with a friendly report and creates nothing
   expect(await runCli(['status'], output.ctx)).toBe(0)
   const text = output.stdout.join('')
   expect(text).toContain('No runs yet')
-  expect(text).toContain('Substrate: not initialized — ships in Phase 1b')
+  expect(text).toContain('Substrate: not initialized — run chox detect')
   await expect(readdir(choxHome)).rejects.toThrow()
 })
 

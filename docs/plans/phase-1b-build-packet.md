@@ -54,6 +54,7 @@ empty = incomplete). Result handoff: `docs/plans/result-1b.md`.
 | P11 | **`--json`** on `chox detect` emits machine-readable findings (stable field names); human output is the default. `--since 30d` limits the scan window (default: everything) |
 | P12 | **Redactor CLI** (`fixtures/redact.ts`, run via `node --experimental-strip-types` or a small npm script): reads real homes **only when run explicitly by the founder locally**, writes redacted JSONL fixtures to `fixtures/claude-code/` and `fixtures/codex/`; a committed fixture must never contain the raw or dash-encoded home path, usernames, or prompt text longer than schema-shape needs (replace message content with shape-preserving placeholders + the derived token fingerprints needed by lens tests). CI never runs the redactor |
 | P13 | **Publish checklist is a deliverable, publishing is the founder's action:** README.md with the §7 privacy contract above the fold, `package.json` prepared (`files`, `bin`, engines, keywords, `private` flag left **true** in the PR — the founder flips it at publish after verifying the handle per F13) |
+| P14 | **Engine spend is visible and skippable** (§2 principles 5–6; added at PM review 2026-07-13): before the first confirm call, `chox detect` prints the chosen engine, the model it will use (or "CLI default"), and the per-finding call ceiling (P7); after confirmation it reports calls made and token usage where the CLI emits it. `--no-confirm` skips engine calls entirely and prints candidates clearly labeled **unconfirmed** — same output path P6 already requires when no binary is available |
 
 ## 2. Scope
 
@@ -61,7 +62,7 @@ empty = incomplete). Result handoff: `docs/plans/result-1b.md`.
 fixture redactor + committed redacted fixtures + drift tests; AnalysisEngine
 (claude, codex); handoff lens (correlate → weight → floor → engine confirm);
 evidence assembly; relay drafting from findings; `chox detect` (+`--json`,
-`--since`, `--source`, `--lens handoff`, `--engine`); `chox install <finding-id>`
+`--since`, `--source`, `--lens handoff`, `--engine`, `--no-confirm`); `chox install <finding-id>`
 (+ dismiss); `chox status` extension; README + publish prep.
 
 **Out (do not build or stub):** profile + repetition lenses (accept `--lens`
@@ -103,7 +104,7 @@ chox install <id>  → draft relay written per P9 → status 'exported'
 | `src/engines/engine.ts` + `claude.ts`, `codex.ts` | §5.2 `AnalysisEngine` + `pickEngine(pref, env)` | headless spawn rules from 1a runtimes (argv-array, stdin prompt, C1); response parsed defensively; timeout per P7 |
 | `src/lenses/lens.ts` + `handoff/*` | `scan(store, opts): Candidate[]`, `confirm(candidates, engine): Finding[]` | P4/P5/P1 weighting; floor F6; evidence F7 computed from substrate timestamps; candidate + finding payloads carry the occurrence list (session ids + refs) |
 | `src/artifacts/draft-relay.ts` | `draftRelay(finding, engine): DraftedRelay` (relay.json + templates content) | P7 budget; P8 inputs; output validates against the 1a `validateRelay`; templates implementer-formatted |
-| `src/cli` wiring in `bin/chox.ts` | `detect`, `install`, extended `status` | §5.4 surface + P11; exit codes: 0 ok (including honest no-findings), 1 failure, 2 usage |
+| `src/cli` wiring in `bin/chox.ts` | `detect`, `install`, extended `status` | §5.4 surface + P11/P14; exit codes: 0 ok (including honest no-findings), 1 failure, 2 usage |
 | `fixtures/redact.ts` | standalone script | P12; its own tests run against synthetic "real-shaped" input in temp dirs, then assert redaction invariants (C3) |
 | `README.md` | §7 contract above the fold, quickstart, honest status | P13 |
 
@@ -129,7 +130,8 @@ guard helper). Additions:
 - **Engine + drafting:** fake engine binaries returning scripted JSON; budget
   overrun → clean failure; drafted relay passes `validateRelay` and installs.
 - **CLI:** detect happy path (fake engines + fixtures in fake home), `--json`
-  schema stability, no-findings wording includes scanned counts + why + what
+  schema stability, `--no-confirm` spawns no engine and labels candidates
+  unconfirmed (P14), no-findings wording includes scanned counts + why + what
   helps (assert the three elements, not exact prose), install/dismiss status
   transitions, install collision suffix, status shows substrate stats.
 - **The demo-gate rehearsal (integration):** a fabricated home with fixture
@@ -158,6 +160,7 @@ may_touch:
   - bin/chox.ts                  # detect/install/status wiring only
   - src/status.ts                # P10 extension
   - src/paths.ts                 # substrate path helper
+  - src/doctor.ts                # substrate health probe — omitted in error; edit approved 2026-07-13 (challenge notes #1)
   - package.json                 # publish prep per P13 (private stays true)
 must_not_touch:
   - docs/SPEC.md docs/CORRECTNESS.md docs/plans/phase-*-packet.md

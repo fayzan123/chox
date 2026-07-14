@@ -1,0 +1,103 @@
+import {
+  addUsage,
+  parseEngineJson,
+  runEngineProcess,
+  type AnalysisEngine,
+  type EngineStats,
+  type EngineUsage
+} from './engine.js'
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function token(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined
+}
+
+export function createClaudeEngine(env: NodeJS.ProcessEnv = process.env): AnalysisEngine {
+  let calls = 0
+  const usage: EngineUsage = {}
+  const model = env.ANTHROPIC_MODEL?.trim() || undefined
+  return {
+    id: 'claude',
+    ...(model ? { model } : {}),
+    async analyze(prompt, opts = {}) {
+      calls += 1
+      const outputFormat = opts.jsonSchema ? 'json' : 'stream-json'
+      const result = await runEngineProcess({
+        binary: 'claude',
+        args: [
+          '-p', '--output-format', outputFormat,
+          ...(outputFormat === 'stream-json' ? ['--verbose'] : []),
+          ...(opts.jsonSchema ? ['--json-schema', JSON.stringify(opts.jsonSchema)] : []),
+          '--safe-mode', '--no-session-persistence',
+          ...(model ? ['--model', model] : []),
+          '--tools', ''
+        ],
+        env,
+        cwd: process.cwd(),
+        prompt,
+        timeoutMs: opts.timeoutMs ?? 30_000
+      })
+      if (result.code !== 0) {
+        throw new Error(`Claude analysis failed (exit ${result.code}): ${result.stderr.trim() || 'no detail'}`)
+      }
+      const messages: string[] = []
+      const values: unknown[] = []
+      const stdout = result.stdout.trim()
+      if (stdout !== '') {
+        try {
+          values.push(JSON.parse(stdout) as unknown)
+        } catch {
+          for (const line of result.stdout.split(/\r?\n/)) {
+            if (line.trim() === '') continue
+            try {
+              values.push(JSON.parse(line) as unknown)
+            } catch {
+              // Ignore non-protocol output and use only validated message records.
+            }
+          }
+        }
+      }
+      let hasStructuredOutput = false
+      let structuredOutput: unknown
+      for (const value of values) {
+        if (!isRecord(value)) continue
+        if (Object.hasOwn(value, 'structured_output')) {
+          hasStructuredOutput = true
+          structuredOutput = value.structured_output
+        }
+        if (value.type === 'result' && typeof value.result === 'string') messages.push(value.result)
+        const message = isRecord(value.message) ? value.message : undefined
+        if (Array.isArray(message?.content)) {
+          for (const itemValue of message.content) {
+            const item = isRecord(itemValue) ? itemValue : undefined
+            if (item?.type === 'text' && typeof item.text === 'string') messages.push(item.text)
+          }
+        }
+        if (value.type === 'result') {
+          const reported = isRecord(value.usage) ? value.usage : undefined
+          const cacheRead = token(reported?.cache_read_input_tokens)
+          const cacheCreate = token(reported?.cache_creation_input_tokens)
+          const inputTokens = token(reported?.input_tokens)
+          const outputTokens = token(reported?.output_tokens)
+          const totalTokens = token(reported?.total_tokens)
+          const next: EngineUsage = {}
+          if (inputTokens !== undefined) next.inputTokens = inputTokens
+          if (cacheRead !== undefined || cacheCreate !== undefined) {
+            next.cachedInputTokens = (cacheRead ?? 0) + (cacheCreate ?? 0)
+          }
+          if (outputTokens !== undefined) next.outputTokens = outputTokens
+          if (totalTokens !== undefined) next.totalTokens = totalTokens
+          addUsage(usage, next)
+        }
+      }
+      if (hasStructuredOutput) return structuredOutput
+      return parseEngineJson(messages)
+    },
+    stats(): EngineStats {
+      return { calls, usage: { ...usage } }
+    }
+  }
+}

@@ -69,14 +69,17 @@ test('a confirmed engine draft validates and compiles with implementer-formatted
   expect(engine.calls).toBe(0)
   expect(result.relay.hops).toHaveLength(3)
   expect(result.templates['plan.md']).toMatch(/structured task breakdown.*manifest/is)
+  expect(result.templates['plan.md']).toContain('{{task}}')
   expect(result.templates['implement.md']).toMatch(/challenge-notes\.md/)
   const plan = compileRelay({
     relay: result.relay,
     dir: '/generated',
     repoRoot: '/repo',
     templates: new Map(Object.entries(result.templates))
-  })
+  }, { task: 'Build the taskable flow' })
   expect(plan.hops).toHaveLength(3)
+  expect(plan.hops[0]?.prompt).toContain('Build the taskable flow')
+  expect(plan.hops[0]?.prompt).not.toContain('{{task}}')
 })
 
 test('an autonomous implementation can follow an earlier challenge hop without artifact collisions', async () => {
@@ -110,7 +113,7 @@ test('an autonomous implementation can follow an earlier challenge hop without a
     dir: '/generated',
     repoRoot: '/repo',
     templates: new Map(Object.entries(result.templates))
-  })
+  }, { task: 'Implement the drafted workflow' })
 
   expect(plan.hops[2]?.produces).toContain('.chox-run/challenge-notes-3.md')
   expect(plan.hops[2]?.prompt).toContain('.chox-run/challenge-notes-3.md')

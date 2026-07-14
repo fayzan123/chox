@@ -677,7 +677,8 @@ async function detectCommand(args: string[], ctx: CliContext): Promise<number> {
                 model: engine.model ?? 'CLI default',
                 callCeiling: 3,
                 calls: finding.engineCalls + draftCalls,
-                usage: engine.stats().usage
+                usage: engine.stats().usage,
+                usageScope: 'detect-run'
               }
             }
             store.upsertFinding({

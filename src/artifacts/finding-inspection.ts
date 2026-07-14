@@ -32,6 +32,7 @@ export interface FindingAnalysisInspection {
   callCeiling: number
   calls: number
   usage: Record<string, number>
+  usageScope: 'detect-run' | 'not-recorded'
 }
 
 export interface FindingInspection {
@@ -121,7 +122,8 @@ function analysisFrom(
       ? finiteNumber(metadata.callCeiling, 'inspection.callCeiling')
       : 3,
     calls,
-    usage
+    usage,
+    usageScope: metadata?.usageScope === 'detect-run' ? 'detect-run' : 'not-recorded'
   }
 }
 
@@ -252,7 +254,7 @@ export function renderFinding(inspection: FindingInspection): string {
     `  Engine: ${analysis.engine}`,
     `  Model: ${analysis.model}`,
     `  Call ceiling: ${analysis.callCeiling}`,
-    `  Actual spend: ${analysis.calls} call(s); tokens ${usageText(analysis.usage)}`
+    `  Actual spend: ${analysis.calls} call(s); ${analysis.usageScope === 'detect-run' ? 'detect-run tokens at persistence' : 'tokens'} ${usageText(analysis.usage)}`
   ]
   if (inspection.confirmation) lines.push(`  Confirmation: ${inspection.confirmation}`)
   if (inspection.coveredBy) lines.push('', `Covered by: ${inspection.coveredBy}`)

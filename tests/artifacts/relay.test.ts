@@ -121,6 +121,75 @@ test('repo-local relays shadow global relays', async () => {
   expect(loaded.templates.get('plan.md')).toBe('local')
 })
 
+test('the built-in starter resolves in an isolated home and remains byte-for-byte read-only', async () => {
+  const root = await makeTempDir()
+  const repoRoot = join(root, 'repo')
+  const paths = resolvePaths({ CHOX_HOME: join(root, 'home') })
+  const loaded = await loadRelay('spec-implement-review', { repoRoot, paths })
+  expect(loaded.source).toBe('built-in')
+  const before = await Promise.all([
+    readFile(join(loaded.dir, 'relay.json')),
+    readFile(join(loaded.dir, 'plan.md')),
+    readFile(join(loaded.dir, 'implement.md')),
+    readFile(join(loaded.dir, 'review.md'))
+  ])
+
+  const plan = compileRelay(loaded, { task: 'Ship café support {{repo}} without re-expanding it' })
+  expect(plan.hops.map(({ runtime }) => runtime)).toEqual(['claude', 'codex', 'claude'])
+  expect(plan.hops.map(({ autonomy }) => autonomy)).toEqual(['challenge', 'autonomous', 'strict'])
+  expect(plan.hops[0]?.prompt).toContain('Ship café support {{repo}} without re-expanding it')
+  expect(plan.hops[0]?.prompt).not.toContain(repoRoot + ' without re-expanding it')
+  expect(plan.hops.every(({ prompt }) => !/{{(?!repo}})[^{}]+}}/.test(prompt))).toBe(true)
+
+  const after = await Promise.all([
+    readFile(join(loaded.dir, 'relay.json')),
+    readFile(join(loaded.dir, 'plan.md')),
+    readFile(join(loaded.dir, 'implement.md')),
+    readFile(join(loaded.dir, 'review.md'))
+  ])
+  expect(after).toEqual(before)
+})
+
+test('global and repository relays shadow the built-in starter in exact precedence order', async () => {
+  const root = await makeTempDir()
+  const repoRoot = join(root, 'repo')
+  const paths = resolvePaths({ CHOX_HOME: join(root, 'home') })
+  const relay = { slug: 'spec-implement-review', hops: [oneHop()] }
+  await writeRelay(join(paths.relays, 'spec-implement-review'), relay, { 'plan.md': 'global winner' })
+  expect((await loadRelay('spec-implement-review', { repoRoot, paths })).source).toBe('global')
+
+  await writeRelay(
+    join(repoRoot, '.chox', 'relays', 'spec-implement-review'),
+    relay,
+    { 'plan.md': 'repository winner' }
+  )
+  const loaded = await loadRelay('spec-implement-review', { repoRoot, paths })
+  expect(loaded.source).toBe('repository')
+  expect(loaded.templates.get('plan.md')).toBe('repository winner')
+})
+
+test('task substitution is single-pass and task consumption errors are actionable', async () => {
+  const root = await makeTempDir()
+  const repoRoot = join(root, 'repo')
+  const paths = resolvePaths({ CHOX_HOME: join(root, 'home') })
+  const taskableDir = join(repoRoot, '.chox', 'relays', 'taskable')
+  await writeRelay(taskableDir, { slug: 'taskable', hops: [oneHop()] }, {
+    'plan.md': 'Task bytes:\n{{task}}\nRepo: {{repo}}'
+  })
+  const taskable = await loadRelay('taskable', { repoRoot, paths })
+  expect(() => compileRelay(taskable)).toThrow(/--task <text>.*--task-file <path>/)
+  const task = 'line 1 {{repo}} {{artifact:secret.md}} }{ "quote" \\ café\nline 2'
+  const plan = compileRelay(taskable, { task })
+  expect(plan.hops[0]?.prompt).toBe(`Task bytes:\n${task}\nRepo: ${repoRoot}`)
+
+  const fixedDir = join(repoRoot, '.chox', 'relays', 'fixed')
+  await writeRelay(fixedDir, { slug: 'fixed', hops: [oneHop()] }, { 'plan.md': 'Fixed purpose' })
+  const fixed = await loadRelay('fixed', { repoRoot, paths })
+  expect(() => compileRelay(fixed, { task: 'must not disappear' }))
+    .toThrowError(new RegExp(`does not consume task input[\\s\\S]*${fixedDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\\\/]plan\\.md`))
+  expect(compileRelay(fixed).hops[0]?.prompt).toBe('Fixed purpose')
+})
+
 test.each([
   ['unknown placeholder', [oneHop()], 'Use {{mystery}}', /unknown placeholder.*mystery/],
   ['forward artifact reference', [

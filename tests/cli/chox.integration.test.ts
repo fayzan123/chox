@@ -37,6 +37,16 @@ test('--version prints the package version', async () => {
   expect(output.stdout.join('')).toMatch(/^0\.0\.0/)
 })
 
+test.each(['run', 'detect', 'relay', 'finding', 'doctor', 'status'])(
+  '%s has command-specific help',
+  async (command) => {
+    const output = context()
+    expect(await runCli([command, '--help'], output.ctx)).toBe(0)
+    expect(output.stdout.join('')).toContain(`chox ${command}`)
+    expect(output.stderr).toEqual([])
+  }
+)
+
 test.each([
   ['unknown command', ['future']],
   ['unknown run flag', ['run', 'demo', '--future']],

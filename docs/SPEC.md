@@ -682,6 +682,25 @@ quality targets in §2.6 hold over two weeks of use; the cross-agent demo record
 exists (the artifact no single-vendor tool can produce). npm handle verified and
 first publish happens here.
 
+**Phase 1b.1 — Detection hardening from the first acceptance run (added 2026-07-13).**
+The first live run (user zero, 2026-07-13) passed the demo gate mechanically — the
+loop was found with honest evidence, confirmed, installed, and its dry-run compiled —
+but user zero judged the drafted relay's role semantics not comparable to his actual
+workflow, and hand-editing a generated relay defeats the product's purpose. Four
+evidence-quality causes were identified from the run: interactive Chox-spawned
+sessions counted as manual bounces (F9 covered only headless `codex_exec`); a prefix
+chain surfaced alongside its longer pattern; role labels were authored from a single
+exemplar whose overlapping sessions were flattened into a false sequence; and the
+candidate's shape matched an already-installed relay that the system drafted a rival
+to instead of recognizing. Scope: worktree-rooted tool-invoked exclusion, prefix
+subsumption, existing-relay coverage reporting, multi-occurrence excerpts,
+concurrency-honest evidence and engine inputs, confirm-phase progress, `--model` on
+detect. Plan: `docs/plans/phase-1b1-build-packet.md`.
+*Accept:* the original 1b criteria re-judged on a fresh live run — no self-detected
+occurrences, one finding per underlying loop, the hand-authored loop reported as
+covered by its installed relay (or a draft user zero runs without semantic edits).
+The 1b demo recording and two-week §2.6 window begin only after this passes.
+
 **Phase 2 — Profile sync + shared context + minimal repetition.**
 Vendor memory-store readers (`~/.codex/memories*`, Claude Code memory — location/
 format verified at planning time, Open Question 2) + correction-pattern extraction

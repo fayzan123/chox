@@ -133,6 +133,14 @@ A **relay** formalizes that loop. Design principles:
   evidence ("this loop occurred 6 times across 2 repos; median 38 minutes each") —
   never counterfactual claims.
 
+Phase 1c makes that loop task-first. A relay consumes `{{task}}` in its template;
+the user supplies `--task <text>` or `--task-file <path>` and never edits prompt
+source on the happy path. The package carries a read-only
+`spec-implement-review` starter. Resolution is repository `.chox/relays/` → global
+`~/.chox/relays/` → built-in, so user-owned choices always win without making the
+package writable. The task is compiled once into `plan.json`; dry-run, real
+execution, and resume share those exact prompt bytes.
+
 Gate ergonomics is the **top product risk**: if approving at a boundary is clunkier
 than manually pasting between two terminals, the flagship fails.
 
@@ -179,16 +187,20 @@ JSONL transcripts on disk       metadata + digests only     profile     AGENTS.m
   (`claude -p`, `codex exec`) is the per-hop opt-in and powers `--unattended` and
   the Phase 3 daemon. Either way the harness enforces autonomy, presents gates,
   isolates in worktrees, streams JSONL run events, and persists everything under
-  `~/.chox/runs/`. Hops can pin a model (`--model`); unset means the CLI's default,
-  always displayed, never silently assumed.
+  `~/.chox/runs/`. Run plans deliberately contain compiled prompts and task text so
+  resume is exact; the metadata-only substrate does not. Hops can pin a model
+  (`--model`); unset means the CLI's default, always displayed, never silently
+  assumed. Doctor bundles inspect only allowlisted metadata and never include those
+  prompts or tasks.
 
-**The privacy contract** (README-above-the-fold material, SPEC.md §7): nothing
-leaves the machine except digests to the engine the user chose; the substrate never
-stores raw content; diagnostics are redacted by construction — including sneaky
-derived encodings like the dash-encoded home directory inside Claude Code project
-names, a real leak class found in CWC; no network listener until the app phase;
-every write outside `~/.chox/` passes ownership checks so hand-authored files are
-never rewritten. **The dependency budget is part of this contract**: production
+**The privacy contract** (README-above-the-fold material, SPEC.md §7): Chox makes no
+network call; only bounded evidence/digests and explicitly disclosed excerpts leave
+through the analysis agent CLI the user chose. The substrate never stores raw
+content; diagnostics are redacted by construction — including sneaky derived
+encodings like the dash-encoded home directory inside Claude Code project names, a
+real leak class found in CWC; no network listener until the app phase; every write
+outside `~/.chox/` passes ownership checks so hand-authored files are never rewritten.
+**The dependency budget is part of this contract**: production
 deps ≈ `croner` (Phase 3) and little else. Phase 1a shipped with **zero** — a
 transcript-reading tool must be boring and auditable.
 
@@ -226,16 +238,12 @@ This project is built *using* the workflow it productizes, deliberately:
 
 ## 9. Roadmap and where we are right now
 
-| Phase | What ships | Gate |
-|---|---|---|
-| **1a — Relay runtime** ✅ built | Relay IR/compiler, harness (gates, autonomy, isolation, events), claude+codex runtimes, `chox run` (+`--dry-run`, `--resume`), `chox doctor`. User zero **hand-authors** his relay — no detection needed to deliver value | User zero prefers `chox run` to the manual bounce; interrupted relays resume; dry-run matches real runs; doctor bundle verified redacted |
-| **1b — Substrate + detection** (next) | SQLite substrate, claude-code + codex sources, fixture redactor, handoff lens with outcome-weighted detection, `chox detect/install/status`. First npm publish | `chox detect` independently finds the loop user zero hand-authored in 1a, with honest evidence. Quality targets: ≤1 dismissed finding/week, ≥50% of suggestions kept |
-| **2 — Profile sync + minimal repetition** | Vendor memory readers, merged preference diffs to AGENTS.md/CLAUDE.md, repo-local shared-context file, simplest repetition→SKILL.md | A preference learned in one tool demonstrably applies in the other |
-| **3 — Resident posture** | `chox watch` daemon, scheduled scans, notifications | A zero-interaction week yields ≥1 useful notification, no spam |
-| **4 — Repetition, full rebuild** | Generation-first structured skills (gates, parallel, multi-runtime) | A generated skill still in use a week later |
-| **5 — Plurality + app** | Third source (Cursor vs OpenClaw by demand), local app with loopback-only server | Full loop works on a machine whose only agent isn't Claude Code |
+The canonical, step-by-step execution plan is [ROADMAP.md](ROADMAP.md). It defines
+the North Star, product metrics, phase order, detailed acceptance gates, external
+alpha, UX standards, app entry criteria, and the immediate action list. This section
+is only the readable current snapshot; do not duplicate the full roadmap here.
 
-**Current status (2026-07-13, end of day):**
+**Current status (2026-07-14):**
 
 - **Phase 1a is ACCEPTED and closed** (recorded in SPEC.md §8). It shipped in two
   iterations: the original relay runtime, then 1a.2 from first-run feedback —
@@ -245,53 +253,109 @@ This project is built *using* the workflow it productizes, deliberately:
   acceptance run: "worked like a charm — I was in my own developer environments
   the entire time."
 - **Two features on main were built by the relay itself** (the product building
-  the product): the resume crash-window fix and `chox status`. 91 tests, zero
-  production dependencies, CI green (Ubuntu + macOS × Node 22/24).
+  the product): the resume crash-window fix and `chox status`. The suite retains
+  zero production dependencies and CI coverage on Ubuntu + macOS × Node 22/24.
 - **Platform decision:** macOS + Linux only (WSL counts); native Windows deferred
   until external demand — the first Windows CI run confirmed the ledger-predicted
   `.cmd` spawn bug class; details in CORRECTNESS.md C8. Windows-safe hygiene
   retained in code.
-- **Next: Phase 1b (the demo gate).** The build packet is written at
-  `docs/plans/phase-1b-build-packet.md` — substrate + sources + fixture redactor
-  + handoff lens + `chox detect`/`install` + README/publish prep. Its acceptance
-  is the north-star moment: `chox detect` independently finding the loop user
-  zero hand-authored in 1a. npm handle gets verified at publish (decision on
-  record: no placeholder publish; scoped fallback acceptable; `private: true`
-  until the founder flips it).
-- **Queued small feature** (post-1b): `--task`/`--task-file` input with a
-  `{{task}}` template placeholder, so relay templates stop being hand-edited per
-  run.
+- **Phase 1b.1 is ACCEPTED and closed.** The founder reran live detection on
+  2026-07-14 and reported that the hardened covered-loop result returned as expected
+  without a rival draft or semantic repair.
+- **Phase 1b follow-through remains open.** Chox now indexes Claude Code and Codex
+  sessions, detects and confirms handoff patterns, drafts and installs relays, and
+  recognizes installed coverage. Remaining work is the concurrent-session check when
+  live evidence exists, demo recording, two-week quality window, and package-name
+  decision.
+- **Current build: Phase 1c — Taskable First Run.** `--task`/`--task-file`, a
+  `{{task}}` placeholder, a packaged starter relay, relay/finding inspection, and a
+  clean external install journey make the runtime usable without hand-editing prompt
+  files. Mechanical acceptance is `npm run verify:pack`; the clean-machine live
+  rehearsal and publish decision remain founder-run gates.
+- **Then: private alpha and flagship depth.** External activation and repeat-use
+  evidence gate review→fix, shared context, daemon, new lenses, and app work. Chox
+  does not expand into those surfaces merely because they appeared in the original
+  phase list.
 
 ## 10. Getting started
+
+The installed package is the product path. The npm handle is still unresolved and
+`private: true` remains binding, so `<resolved-package-name>` is an intentional
+placeholder until the founder completes the handle and acceptance gates.
+
+```sh
+npm install -g <resolved-package-name>
+cd <an-existing-git-repository>
+chox doctor
+chox relay list
+chox relay show spec-implement-review
+printf '%s\n' 'Implement the requested change with tests.' > task.md
+chox run spec-implement-review --task-file task.md --dry-run
+chox run spec-implement-review --task-file task.md
+```
+
+The starter works without detection. Before choosing to personalize it, understand
+the boundary: `chox detect` reads local Claude Code and Codex histories.
+`--no-confirm` starts no agent; confirmation sends bounded evidence/excerpts only
+through the explicitly selected local agent CLI, which may contact its vendor.
+
+```sh
+chox detect --no-confirm
+chox detect
+chox finding show <finding-id>
+```
+
+Contributor setup remains available below the activation path:
 
 ```sh
 git clone https://github.com/fayzan123/chox.git && cd chox
 node --version        # must be >= 22.13
 npm ci
 npm run typecheck && npm test && npm run build
-
-node dist/bin/chox.js doctor                              # environment probes
-node dist/bin/chox.js run spec-implement-review --dry-run # see a relay plan, zero spawns
+npm run verify:pack
 ```
 
-The dry run prints the full execution plan of the example relay — the founder's
-plan→implement→review loop — including the exact prompts each agent would receive.
-It's the fastest way to *get* the product.
+The packed verifier is the mechanical clean-machine stand-in. For a manual source
+smoke, run the compiled absolute path from another Git repository so the packaged
+built-in is not intentionally shadowed by this repository's founder-owned relay:
+
+```sh
+cd <an-existing-git-repository>
+node <path-to-chox>/dist/bin/chox.js run spec-implement-review --task-file task.md --dry-run
+```
+
+The dry run prints the exact compiled plan and task that a real run would persist.
+
+## 11. Uninstall and data ownership
+
+Package removal, data removal, and Git cleanup are intentionally independent:
+
+- `npm uninstall -g <resolved-package-name>` removes only the installed CLI.
+- Global relays live under `~/.chox/relays/`; repository relays remain in each
+  repository's `.chox/relays/`. Review them individually before removal.
+- Run plans, events, and approved artifacts live under `~/.chox/runs/` and may
+  contain task/prompt text. Remove them only after pending runs are resolved.
+- `~/.chox/substrate.db` is the rebuildable metadata/digest cache.
+- Active worktrees must be finished or aborted through Chox so changes are committed
+  before removal.
+- Preserved `chox/...` Git branches live in the original repositories and survive
+  package or Chox-home deletion. Merge or delete them explicitly after review.
 
 **Reading order:** this doc → `docs/SPEC.md` (skim §1–§3, read §2 and §7 closely)
-→ `docs/CORRECTNESS.md` → `docs/plans/phase-1a-build-packet.md` +
+→ `docs/ROADMAP.md` → `docs/CORRECTNESS.md` → `docs/plans/phase-1a-build-packet.md` +
 `docs/plans/challenge-notes-1a.md` (packet-and-challenge is how all work happens
 here) → the code, starting at `bin/chox.ts` → `src/harness/runner.ts`.
 
 **Repo map:**
 
 ```
-bin/chox.ts            CLI entry (run, doctor)
+bin/chox.ts            CLI parsing and command dispatch
 src/artifacts/         relay IR, loader, compiler (→ later: skill compiler, export)
 src/harness/           runner, gates, autonomy, isolation, run store/events
 src/runtimes/          claude + codex agent adapters
-src/substrate|sources|lenses|engines/   empty until Phase 1b+
+src/substrate|sources|lenses|engines/   Phase 1b substrate, parsing, detection, confirmation
+relays/                read-only relays shipped in the package
 .chox/relays/          the example relay (repo-local relays live in .chox/relays/<slug>/)
-docs/                  SPEC.md, CORRECTNESS.md, plans/ (packets, challenge notes, results)
+docs/                  SPEC.md, ROADMAP.md, CORRECTNESS.md, plans/ packets/results
 tests/                 real-FS, fake-binary suites; helpers in tests/helpers/
 ```

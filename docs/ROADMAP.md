@@ -593,6 +593,10 @@ chox relay remove <slug>
 - Preserve edit/redirect/abort/resume behavior.
 - Ensure keyboard-only and screen-reader-friendly terminal output; color must never be
   the sole carrier of meaning.
+- Give the user a runtime lever to choose a hop's model without hand-editing a relay
+  file (deferred from the Phase 1c live rehearsal, `docs/plans/result-1c.md`
+  2026-07-14 — e.g. a `chox run --model <name>` override, symmetric with the existing
+  `detect --model`).
 
 ### Exit gate
 

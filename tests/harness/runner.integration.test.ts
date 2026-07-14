@@ -1,4 +1,4 @@
-import { appendFile, readFile, rm, writeFile } from 'node:fs/promises'
+import { appendFile, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { afterEach, describe, expect, test } from 'vitest'
@@ -96,6 +96,24 @@ async function setup() {
 }
 
 describe.sequential('runner integration', () => {
+  test('missing runtimes fail whole-plan preflight with recovery guidance before any worktree or spawn', async () => {
+    const fixture = await setup()
+    try {
+      process.env.PATH = join(fixture.root, 'missing-runtime-bin')
+      await expect(executeRun({
+        plan: makePlan(),
+        repoRoot: fixture.repoRoot,
+        paths: fixture.paths,
+        io: scriptedGate([]),
+        unattended: true
+      })).rejects.toThrow(/Agent runtime preflight failed[\s\S]*Claude Code.*Install[\s\S]*Codex CLI.*Install/i)
+      await expect(readdir(fixture.paths.worktrees)).rejects.toThrow()
+      await expect(readFile(fixture.fake.logPath, 'utf8')).rejects.toThrow()
+    } finally {
+      fixture.restore()
+    }
+  })
+
   test('a full two-hop run flows artifacts through every gate and sends exact compiled prompts', async () => {
     const fixture = await setup()
     try {

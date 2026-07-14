@@ -5,32 +5,23 @@
     {
       "runtime": "claude",
       "role": "plan",
-      "autonomy": "challenge",
       "promptTemplate": "plan.md",
-      "produces": [
-        "spec.md",
-        "manifest.json"
-      ]
+      "autonomy": "challenge",
+      "produces": ["spec.md", "manifest.json"]
     },
     {
       "runtime": "codex",
       "role": "implement",
-      "autonomy": "autonomous",
       "promptTemplate": "implement.md",
-      "produces": [
-        "challenge-notes-2.md"
-      ]
+      "autonomy": "autonomous",
+      "produces": ["implementation.md", "implementation-notes.md"]
     },
     {
       "runtime": "claude",
       "role": "review",
-      "autonomy": "strict",
       "promptTemplate": "review.md",
-      "produces": [
-        "review.md"
-      ]
+      "autonomy": "strict",
+      "produces": ["review.md"]
     }
-  ],
-  "generatedBy": "chox@0.0.0",
-  "finding": "handoff-cd139200d693a8e8"
+  ]
 }

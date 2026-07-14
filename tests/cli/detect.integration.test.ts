@@ -115,7 +115,8 @@ async function writeLoop(home: string, repo: string, prefix = 'loop'): Promise<v
 async function writeInstalledRelay(
   baseDir: string,
   slug: string,
-  runtimes: Array<'claude' | 'codex'>
+  runtimes: Array<'claude' | 'codex'>,
+  taskable = false
 ): Promise<void> {
   const dir = join(baseDir, slug)
   await mkdir(dir, { recursive: true })
@@ -128,7 +129,10 @@ async function writeInstalledRelay(
   }))
   await writeFile(join(dir, 'relay.json'), JSON.stringify({ slug, hops }))
   await Promise.all(hops.map(async (hop, index) => {
-    await writeFile(join(dir, hop.promptTemplate), `Prompt ${index + 1}`)
+    await writeFile(
+      join(dir, hop.promptTemplate),
+      `${index === 0 && taskable ? 'Task:\n{{task}}\n' : ''}Prompt ${index + 1}`
+    )
   }))
 }
 
@@ -260,7 +264,8 @@ test('an installed matching relay reports coverage and spends no analysis calls'
   await writeInstalledRelay(
     join(fixture.choxHome, 'relays'),
     'spec-implement-review',
-    ['claude', 'codex', 'claude']
+    ['claude', 'codex', 'claude'],
+    true
   )
 
   expect(await runCli(['detect', '--json'], fixture.output.ctx)).toBe(0)
@@ -277,6 +282,10 @@ test('an installed matching relay reports coverage and spends no analysis calls'
   const human = freshOutput(fixture.output.ctx)
   expect(await runCli(['detect'], human.ctx)).toBe(0)
   expect(human.stdout.join('')).toContain('already automated by `spec-implement-review`')
+  expect(human.stdout.join('')).toContain('Inspect: chox relay show spec-implement-review')
+  expect(human.stdout.join('')).toContain(
+    'Next: chox run spec-implement-review --task-file <task.md> --dry-run'
+  )
 })
 
 test('--no-confirm spawns no engine and labels candidates unconfirmed', async () => {
@@ -401,6 +410,9 @@ test('install is repo-local, never overwrites a collision, and dismiss persists'
   const install = freshOutput(fixture.output.ctx)
   expect(await runCli(['install', findingId as string], install.ctx)).toBe(0)
   expect(install.stdout.join('')).toContain(`${engineRelay.relay.slug}-2`)
+  expect(install.stdout.join('')).toContain(
+    `Next: chox run ${engineRelay.relay.slug}-2 --task-file <task.md> --dry-run`
+  )
   expect(await readFile(join(collision, 'hand-authored.txt'), 'utf8')).toBe('keep me')
   const installed = join(fixture.repo, '.chox', 'relays', `${engineRelay.relay.slug}-2`)
   const relay = JSON.parse(await readFile(join(installed, 'relay.json'), 'utf8')) as Record<string, unknown>
@@ -420,6 +432,60 @@ test('install is repo-local, never overwrites a collision, and dismiss persists'
   const dismissedStore = openSubstrate(resolvePaths(fixture.output.ctx.env))
   expect(dismissedStore.getFinding(findingId as string)?.status).toBe('dismissed')
   dismissedStore.close()
+})
+
+test('interactive view renders finding details, re-prompts, and install prints the runnable next command', async () => {
+  const fixture = await detectionFixture()
+  const keys = ['v', 'i']
+  let reads = 0
+  const interactive = context({
+    cwd: fixture.output.ctx.cwd,
+    env: fixture.output.ctx.env,
+    stdinIsTTY: true,
+    gateIO: {
+      print() {},
+      async readKey() {
+        reads += 1
+        return keys.shift() ?? 's'
+      },
+      async openEditor() {},
+      async readLine() { return '' }
+    }
+  })
+
+  expect(await runCli(['detect', '--engine', 'claude'], interactive.ctx)).toBe(0)
+  expect(reads).toBe(2)
+  const text = interactive.stdout.join('')
+  expect(text).toMatch(/Finding: handoff-[0-9a-f]+[\s\S]*Evidence:[\s\S]*Proposed workflow:/)
+  expect(text).toMatch(/Engine: claude[\s\S]*Call ceiling: 3[\s\S]*Actual spend: 1 call\(s\)/)
+  expect(text).toMatch(/Installed relay detected-plan-build-review/)
+  expect(text).toContain(
+    'Next: chox run detected-plan-build-review --task-file <task.md> --dry-run'
+  )
+})
+
+test('detect --json remains one document and never opens an interactive decision even on a TTY', async () => {
+  const fixture = await detectionFixture()
+  let reads = 0
+  const output = context({
+    cwd: fixture.output.ctx.cwd,
+    env: fixture.output.ctx.env,
+    stdinIsTTY: true,
+    gateIO: {
+      print() {},
+      async readKey() {
+        reads += 1
+        return 's'
+      },
+      async openEditor() {},
+      async readLine() { return '' }
+    }
+  })
+
+  expect(await runCli(['detect', '--json', '--engine', 'claude'], output.ctx)).toBe(0)
+  expect(reads).toBe(0)
+  expect(() => JSON.parse(output.stdout.join(''))).not.toThrow()
+  expect(output.stdout).toHaveLength(1)
 })
 
 test('usage errors cover future lenses, invalid since, invalid engine, and empty model values', async () => {

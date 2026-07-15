@@ -267,8 +267,10 @@ is only the readable current snapshot; do not duplicate the full roadmap here.
   recognizes installed coverage. Remaining work is the concurrent-session check when
   live evidence exists, demo recording, and the two-week quality window.
 - **Phase 1c is ACCEPTED and published.** The founder passed the clean-machine live
-  rehearsal, and `chox-cli@0.1.0` is public on npm. The package installs the `chox`
-  command and includes the taskable, read-only `spec-implement-review` starter.
+  rehearsal, and `chox-cli@0.1.1` is the verified latest release on npm. The package
+  installs the `chox` command and includes the taskable, read-only
+  `spec-implement-review` starter. Version `0.1.0` remains the immutable first public
+  release.
 - **Current product step: private alpha and UX hardening.** External activation and
   repeat-use evidence gate review→fix, shared context, daemon, new lenses, and app
   work. Chox does not expand into those surfaces merely because they appeared in the

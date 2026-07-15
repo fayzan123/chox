@@ -3,11 +3,12 @@
 - **Date:** 2026-07-14
 - **Package:** `chox-cli@0.1.0`
 - **CLI command:** `chox`
-- **Disposition:** repository corrected; maintainer approved patch release 0.1.1
+- **Disposition:** repository corrected; `chox-cli@0.1.1` published and verified
 
-## Live registry and Git state
+## Original v0.1.0 registry and Git state
 
-- npm exposes exactly one version, `0.1.0`, and the `latest` dist-tag resolves to it.
+- At the start of this audit, npm exposed exactly one version, `0.1.0`, and the
+  `latest` dist-tag resolved to it.
 - Registry metadata has the intended MIT license, Node `>=22.13` engine, zero
   production dependencies, `bin.chox = dist/bin/chox.js`, registry signature, and
   integrity `sha512-cHk0dvdz0cDu/E/jiWTJm8t19s14jGsqo7mziUhG8BjaOsR4Pxq4YE+J40YnH6Cs6ruAapIpRItP5TNxRKZYNQ==`.
@@ -19,7 +20,7 @@
   mismatch, not a source-content mismatch: the published source-bearing files match
   the tagged release bytes.
 
-## Published artifact comparison
+## v0.1.0 published artifact comparison
 
 The registry tarball was downloaded independently, extracted, and compared with a
 clean build of `v0.1.0`:
@@ -35,7 +36,7 @@ clean build of `v0.1.0`:
   file deleted before the release. They do not affect runtime behavior, but they make
   the artifact an inexact build of its tag.
 
-## Fresh installed-package journey
+## v0.1.0 fresh installed-package journey
 
 A real `npm install --global chox-cli@0.1.0` was performed in an isolated prefix with
 isolated npm, Chox, Claude, and Codex homes and fake vendor binaries. The installed
@@ -87,3 +88,28 @@ The release must commit and tag the exact tree first, run the complete
 `prepublishOnly` gate from a clean checkout, publish from that commit, and verify
 registry metadata plus a fresh installed journey again. The verified release outcome
 is appended only after those steps pass.
+
+## Verified v0.1.1 release outcome
+
+`chox-cli@0.1.1` was published on 2026-07-14 local time after the maintainer's
+explicit approval. npm's `latest` dist-tag resolves to `0.1.1`, while immutable
+`0.1.0` remains available as the first public release.
+
+- Release commit and lightweight tag `v0.1.1` both identify
+  `618962fa1bbcb5a50fb23559d39b63207b70c0a7`.
+- npm records that exact commit as `gitHead`; the tag, package provenance metadata,
+  and published source therefore agree.
+- The published tarball has 88 files, no stale `dist/src/harness/git.js` output,
+  unpacked size 490,852 bytes, shasum
+  `1ac92d3eb038e11bb706ad82baf2929f3ce272a5`, and integrity
+  `sha512-d7Z8+N8TU0QR9zxRuL4lUf93iy3vq66pqXhyMrgj4DorbQnybTjZgFEPGJyeED9vDFFnzPOK2JfhjItJSe/U4Q==`.
+- `prepublishOnly` passed strict typechecking, all 186 tests, a clean production
+  build, and installed-package verification before npm accepted the publish.
+- A fresh, unpinned `npm install --global chox-cli` in an isolated prefix resolved
+  to `0.1.1`. Its `chox` symlink targeted the packaged executable, `chox --version`
+  returned `0.1.1`, built-in relay list/show resolved package-relative assets, and a
+  task-file dry-run compiled all three documented prompts in a new Git repository.
+  Isolated `doctor` and empty-state `status` also exited successfully.
+
+The patch release corrects every publish-integrity defect found here without moving
+or replacing `0.1.0` and without changing the installed CLI command from `chox`.

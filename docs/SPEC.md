@@ -746,7 +746,8 @@ rehearsal and accepted Phase 1c. npm rejected the unclaimed `chox` handle under 
 anti-squatting similarity policy, so the founder chose the public package name
 `chox-cli`; its `bin.chox` entry preserves `chox` as the product and command name.
 Version 0.1.0 is the first public release. The post-publish integrity audit is
-recorded in `docs/plans/result-0.1.0-publish-audit.md`.
+recorded in `docs/plans/result-0.1.0-publish-audit.md`; its findings were corrected in
+the verified `chox-cli@0.1.1` patch release, which is the current npm `latest`.
 
 **Phase 2 — Profile sync + shared context + minimal repetition.**
 Vendor memory-store readers (`~/.codex/memories*`, Claude Code memory — location/

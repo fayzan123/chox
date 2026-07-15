@@ -3,9 +3,10 @@
 - **Status:** Active execution roadmap
 - **Effective:** 2026-07-14
 - **Owner:** Founder
-- **Current position:** Phase 1c is accepted and `chox-cli@0.1.0` is public. The
-  Phase 1b detection-quality window/demo remain open, the post-publish audit is
-  recorded, and Phase 1c.1 private alpha is next.
+- **Current position:** Phase 1c is accepted and `chox-cli@0.1.1` is the verified
+  latest npm release. The Phase 1b detection-quality window/demo remain open, the
+  post-publish audit and patch remediation are recorded, and Phase 1c.1 private alpha
+  is next.
 
 This document turns Chox's product thesis into an ordered path from a strong
 technical kernel to a product other developers can install, understand, trust, and
@@ -224,7 +225,7 @@ cohort targets only when the project has enough users to make percentages meanin
 | Order | Status | Milestone | Product outcome | Gate to continue |
 |---:|---|---|---|---|
 | 0 | In progress | Close Phase 1b follow-through | Detection is accepted and its evidence window is complete | Demo, concurrency record, and measurement close honestly |
-| 1 | Complete | Phase 1c — Taskable First Run | A clean install can start a real task without editing Chox files | Passed 2026-07-14; `chox-cli@0.1.0` published |
+| 1 | Complete | Phase 1c — Taskable First Run | A clean install can start a real task without editing Chox files | Passed 2026-07-14; `chox-cli@0.1.1` verified |
 | 2 | Next | Phase 1c.1 — Private Alpha | Target developers complete the journey without coaching | Activation, completion, trust, and repeat-use gates pass |
 | 3 | Gated | Phase 1d — Complete the Job | Review can lead to fix/re-review and a clear branch outcome | Repeated real tasks finish without terminal choreography |
 | 4 | Gated | Phase 2A — Personal Context and Relay Refinement | Repeated runs require less re-explanation and workflows improve safely | Users keep and reuse proposed context/refinements |
@@ -445,7 +446,8 @@ The milestone is not complete until the packed artifact passes this journey.
 
 **Status: ACCEPTED (2026-07-14).** The founder passed the live clean-machine journey
 and published `chox-cli@0.1.0`. The independent post-publish artifact/consumer audit
-is recorded in `docs/plans/result-0.1.0-publish-audit.md`.
+is recorded in `docs/plans/result-0.1.0-publish-audit.md`; its findings were corrected
+and independently rechecked in the verified `chox-cli@0.1.1` patch release.
 
 ### Out of scope
 
@@ -1001,15 +1003,13 @@ are true:
 
 This is the concrete order from the current repository state:
 
-1. Decide whether the immutable 0.1.0 artifact findings warrant a
-   maintainer-approved patch release; never attempt to republish or move 0.1.0.
-2. Confirm the detection-quality window end date and Phase 1b demo/concurrency plan.
-3. Recruit the five private-alpha developers from the beachhead profile.
-4. Observe the installed journey without intervening and record activation, trust,
+1. Confirm the detection-quality window end date and Phase 1b demo/concurrency plan.
+2. Recruit the five private-alpha developers from the beachhead profile.
+3. Observe the installed journey without intervening and record activation, trust,
    completion, and gate-friction evidence.
-5. Fix P0/P1 alpha findings before expanding scope, then rerun at least one participant
+4. Fix P0/P1 alpha findings before expanding scope, then rerun at least one participant
    through the revised flow.
-6. Measure seven-day return use and make the go/iterate/stop decision for Phase 1d.
+5. Measure seven-day return use and make the go/iterate/stop decision for Phase 1d.
 
 The next product decision after those actions comes from observed retention, not from
 the remaining length of the original feature list.
@@ -1042,3 +1042,4 @@ Append entries; do not rewrite older ones.
 | 2026-07-14 | Marked Phase 1b.1 accepted and closed; kept the broader Phase 1b demo, measurement, and package preparation open | Founder reran live detection and reported that the hardened covered-loop result returned as expected without a rival draft or semantic repair |
 | 2026-07-14 | Marked Phase 1c accepted and moved private alpha to next; recorded the public package as `chox-cli@0.1.0` with command `chox` | Founder passed the live clean-machine rehearsal and the package was published after npm rejected the unclaimed `chox` handle under its similarity policy |
 | 2026-07-14 | Added the post-publish integrity gate and patch-release decision | The live package passed the installed journey, while the audit found stale build output, mismatched npm `gitHead`, stale lock/test identity, and a rename-broken pack verifier |
+| 2026-07-14 | Published and verified `chox-cli@0.1.1` as `latest` while retaining the `chox` command | The maintainer approved the patch; clean lifecycle gates, exact npm `gitHead`, an artifact comparison, and a fresh unpinned install confirmed the audit findings were corrected |

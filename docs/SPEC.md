@@ -741,6 +741,13 @@ resumes an interrupted run on the same compiled plan, and edits no relay source
 files. Founder-judged live; publish and alpha recruitment follow only after it
 passes.
 
+**ACCEPTED AND PUBLISHED (2026-07-14).** The founder completed the clean-machine
+rehearsal and accepted Phase 1c. npm rejected the unclaimed `chox` handle under its
+anti-squatting similarity policy, so the founder chose the public package name
+`chox-cli`; its `bin.chox` entry preserves `chox` as the product and command name.
+Version 0.1.0 is the first public release. The post-publish integrity audit is
+recorded in `docs/plans/result-0.1.0-publish-audit.md`.
+
 **Phase 2 — Profile sync + shared context + minimal repetition.**
 Vendor memory-store readers (`~/.codex/memories*`, Claude Code memory — location/
 format verified at planning time, Open Question 2) + correction-pattern extraction
@@ -823,6 +830,10 @@ the loop also completes with the app never opened (CLI-parity guard).
    register `chox` on npm hit issues, and the handle choice is deferred entirely
    to Phase 1b. The package stays `private: true` until then; `chox` remains the
    internal/CLI name regardless of what the eventual npm handle is.**
+   **Resolved (2026-07-14):** the registry again rejected `chox` under its
+   anti-squatting similarity policy despite the handle remaining unclaimed. The
+   founder declined a personal scope and published `chox-cli@0.1.0`; the CLI command
+   remains `chox`.
 2. **Claude Code memory location/format** for the profile lens — verify on the
    founder's machine at Phase 2 planning. **Fallback:** if a vendor memory store is
    unreadable or drifts, the profile lens degrades to correction-pattern extraction

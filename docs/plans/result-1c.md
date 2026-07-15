@@ -122,3 +122,9 @@ opening inside the isolated worktree with that compiled prompt. The one finding
 from the rehearsal (model-selection control, above) is recorded and explicitly
 deferred by founder decision rather than blocking this result. Publishing and alpha
 recruitment follow per `docs/plans/phase-1c-rehearsal-playbook.md` Steps 5-8.
+
+## Post-phase release record
+
+The known gaps above record the state at the Phase 1c implementation handoff and are
+intentionally not rewritten. The later handle decision, publish, and post-publish
+verification are recorded in `docs/plans/result-0.1.0-publish-audit.md`.

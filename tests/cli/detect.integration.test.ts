@@ -416,13 +416,20 @@ test('install is repo-local, never overwrites a collision, and dismiss persists'
   expect(await readFile(join(collision, 'hand-authored.txt'), 'utf8')).toBe('keep me')
   const installed = join(fixture.repo, '.chox', 'relays', `${engineRelay.relay.slug}-2`)
   const relay = JSON.parse(await readFile(join(installed, 'relay.json'), 'utf8')) as Record<string, unknown>
+  const packageManifest = JSON.parse(
+    await readFile(new URL('../../package.json', import.meta.url), 'utf8')
+  ) as { version?: unknown }
+  expect(typeof packageManifest.version).toBe('string')
+  const packageVersion = String(packageManifest.version)
   expect(relay).toMatchObject({
     slug: `${engineRelay.relay.slug}-2`,
-    generatedBy: 'chox@0.0.0',
+    generatedBy: `chox@${packageVersion}`,
     finding: findingId
   })
   validateRelay(relay, { slug: `${engineRelay.relay.slug}-2` })
-  expect(await readFile(join(installed, 'plan.md'), 'utf8')).toMatch(/generatedBy: chox@0\.0\.0/)
+  expect(await readFile(join(installed, 'plan.md'), 'utf8')).toContain(
+    `generatedBy: chox@${packageVersion}`
+  )
 
   const store = openSubstrate(resolvePaths(fixture.output.ctx.env))
   expect(store.getFinding(findingId as string)?.status).toBe('exported')

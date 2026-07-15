@@ -57,6 +57,39 @@ async function treeHash(root) {
   return hash.digest('hex')
 }
 
+async function treeFiles(root) {
+  const files = []
+  async function visit(dir) {
+    const entries = await readdir(dir, { withFileTypes: true })
+    entries.sort((left, right) => left.name.localeCompare(right.name))
+    for (const entry of entries) {
+      const path = join(dir, entry.name)
+      if (entry.isDirectory()) await visit(path)
+      else files.push(relative(root, path).replaceAll('\\', '/'))
+    }
+  }
+  await visit(root)
+  return files
+}
+
+async function assertBuildOutputMatchesSources() {
+  const sourceFiles = [
+    ...(await treeFiles(join(packageRoot, 'bin'))).map((path) => `bin/${path}`),
+    ...(await treeFiles(join(packageRoot, 'src'))).map((path) => `src/${path}`)
+  ].filter((path) => path.endsWith('.ts') && !path.endsWith('.d.ts'))
+  const expected = new Set(sourceFiles.flatMap((path) => {
+    const output = path.slice(0, -3)
+    return [`${output}.js`, `${output}.js.map`]
+  }))
+  const actual = new Set(await treeFiles(join(packageRoot, 'dist')))
+  const missing = [...expected].filter((path) => !actual.has(path))
+  const unexpected = [...actual].filter((path) => !expected.has(path))
+  assert(
+    missing.length === 0 && unexpected.length === 0,
+    `dist does not exactly match TypeScript sources; missing: ${missing.join(', ') || 'none'}; unexpected: ${unexpected.join(', ') || 'none'}`
+  )
+}
+
 async function installFakeAgents(root) {
   const bin = join(root, 'fake-bin')
   const driver = join(root, 'fake-agent.mjs')
@@ -116,6 +149,21 @@ async function main() {
   }
   const root = await mkdtemp(join(tmpdir(), 'chox-verify-pack-'))
   try {
+    const packageManifest = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8'))
+    assert(
+      typeof packageManifest === 'object' && packageManifest !== null && !Array.isArray(packageManifest),
+      'package.json must contain an object'
+    )
+    const packageName = packageManifest.name
+    assert(
+      typeof packageName === 'string' && packageName.length > 0,
+      'package.json must contain a package name'
+    )
+    const packageSegments = packageName.split('/')
+    assert(
+      packageSegments.every((segment) => segment !== '' && segment !== '.' && segment !== '..'),
+      `package.json contains an invalid package name: ${packageName}`
+    )
     const packDir = join(root, 'pack')
     const prefix = join(root, 'prefix')
     const npmEnv = {
@@ -135,14 +183,22 @@ async function main() {
     const filename = packed?.[0]?.filename
     assert(typeof filename === 'string', 'npm pack did not report a tarball filename')
     const tarball = join(packDir, filename)
+    await assertBuildOutputMatchesSources()
 
     process.stdout.write('verify:pack · installing into fresh prefix\n')
     command(npm, ['install', '--global', '--prefix', prefix, tarball], {
       env: npmEnv
     })
     const globalRoot = command(npm, ['root', '--global', '--prefix', prefix], { env: npmEnv }).trim()
-    const installedPackage = join(globalRoot, 'chox')
+    const installedPackage = join(globalRoot, ...packageSegments)
     const installedBin = join(prefix, 'bin', 'chox')
+    const installedManifest = JSON.parse(
+      await readFile(join(installedPackage, 'package.json'), 'utf8')
+    )
+    assert(
+      installedManifest?.name === packageName,
+      `packed install resolved ${String(installedManifest?.name)}, expected ${packageName}`
+    )
     const builtInDir = join(installedPackage, 'relays', 'spec-implement-review')
     const builtInBefore = await treeHash(builtInDir)
 

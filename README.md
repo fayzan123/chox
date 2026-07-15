@@ -7,6 +7,7 @@ network call.
 ## Installed-package quickstart
 
 Requirements: Node.js 22.13 or newer, npm, Git, Claude Code, and Codex CLI.
+The npm package is named `chox-cli`; it installs the unchanged `chox` command.
 
 ```sh
 npm install -g chox-cli
@@ -129,9 +130,15 @@ node <path-to-chox>/dist/bin/chox.js run spec-implement-review --task-file task.
 Tests isolate `CHOX_HOME`, `HOME`, and fake agent binaries; they never scan real
 `~/.chox`, `~/.claude`, or `~/.codex` data.
 
-The canonical product contract is [docs/SPEC.md](docs/SPEC.md), the active sequence
-and gates are in [docs/ROADMAP.md](docs/ROADMAP.md), mandatory invariants are in
-[docs/CORRECTNESS.md](docs/CORRECTNESS.md), and phase packets/results are in
-[docs/plans/](docs/plans/).
+The canonical product contract is
+[docs/SPEC.md](https://github.com/fayzan123/chox/blob/main/docs/SPEC.md), the active
+sequence and gates are in
+[docs/ROADMAP.md](https://github.com/fayzan123/chox/blob/main/docs/ROADMAP.md),
+mandatory invariants are in
+[docs/CORRECTNESS.md](https://github.com/fayzan123/chox/blob/main/docs/CORRECTNESS.md),
+and phase packets/results are in
+[docs/plans/](https://github.com/fayzan123/chox/tree/main/docs/plans/). Absolute
+links keep the npm README useful even though internal planning documents are not
+part of the installed package.
 
 Chox is licensed under the [MIT License](LICENSE).

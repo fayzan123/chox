@@ -1,9 +1,18 @@
 {
   "name": "chox-cli",
-  "version": "0.1.0",
-  "description": "Local-only, cross-agent session substrate: lenses over your coding-agent history, ending in installable artifacts",
+  "version": "0.1.1",
+  "description": "Local-first CLI for gated cross-agent workflows in isolated Git worktrees",
   "type": "module",
   "license": "MIT",
+  "author": "Fayzan Malik",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fayzan123/chox.git"
+  },
+  "bugs": {
+    "url": "https://github.com/fayzan123/chox/issues"
+  },
+  "homepage": "https://github.com/fayzan123/chox#readme",
   "engines": {
     "node": ">=22.13"
   },
@@ -26,11 +35,15 @@
     "workflow"
   ],
   "scripts": {
+    "clean": "node scripts/clean-dist.mjs",
+    "prebuild": "npm run clean",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json",
     "postbuild": "node scripts/chmod-bin.mjs",
-    "verify:pack": "npm run build && node scripts/verify-pack.mjs",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run typecheck && npm test && npm run verify:pack",
+    "verify:pack": "node scripts/verify-pack.mjs",
     "dev": "tsc --watch",
     "fixtures:redact": "node --experimental-strip-types fixtures/redact.ts",
     "fixtures:verify": "node --experimental-strip-types fixtures/redact.ts --verify"

@@ -32,9 +32,13 @@ test('no arguments print usage successfully', async () => {
 })
 
 test('--version prints the package version', async () => {
+  const packageManifest = JSON.parse(
+    await readFile(new URL('../../package.json', import.meta.url), 'utf8')
+  ) as { version?: unknown }
+  expect(typeof packageManifest.version).toBe('string')
   const output = context()
   expect(await runCli(['--version'], output.ctx)).toBe(0)
-  expect(output.stdout.join('')).toMatch(/^0\.0\.0/)
+  expect(output.stdout.join('')).toBe(`${String(packageManifest.version)}\n`)
 })
 
 test.each(['run', 'detect', 'relay', 'finding', 'doctor', 'status'])(

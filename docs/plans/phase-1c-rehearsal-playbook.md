@@ -11,6 +11,14 @@ Everything below is the path from here to the private alpha.
 The order is strict: **rehearse → judge → merge → publish → demo → alpha.** Do not
 skip ahead; the roadmap's exit gates (`docs/ROADMAP.md` §8–§9) assume this sequence.
 
+> **Post-publish note (2026-07-14):** Steps 0–6 below are the historical 0.1.0
+> procedure. `chox-cli@0.1.0` is now public and still installs the `chox` command.
+> The audit in `result-0.1.0-publish-audit.md` found that publishing before the
+> release commit made npm record the prior commit as `gitHead`. For every subsequent
+> release, commit the exact release tree first, pass the publish gates from that clean
+> commit, tag that commit, and publish from it; verify npm's `gitHead` against the tag
+> before announcing the release.
+
 ---
 
 ## Step 0 — Pre-flight (5 minutes, in this repo)
@@ -238,6 +246,10 @@ Then, on `main`:
    ```
 
 5. Commit the version bump; tag it (`git tag v0.1.0 && git push --tags`).
+
+   This ordering records what happened for 0.1.0. Do not reuse it for later
+   releases; follow the post-publish note above so the published `gitHead`, release
+   commit, and tag are the same commit.
 
 ---
 

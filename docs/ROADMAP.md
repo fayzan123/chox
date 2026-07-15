@@ -3,9 +3,9 @@
 - **Status:** Active execution roadmap
 - **Effective:** 2026-07-14
 - **Owner:** Founder
-- **Current position:** Phase 1b.1 is accepted and closed; the Phase 1b
-  detection-quality window, demo recording, handle verification, and Phase 1c packet
-  remain open.
+- **Current position:** Phase 1c is accepted and `chox-cli@0.1.0` is public. The
+  Phase 1b detection-quality window/demo remain open, the post-publish audit is
+  recorded, and Phase 1c.1 private alpha is next.
 
 This document turns Chox's product thesis into an ordered path from a strong
 technical kernel to a product other developers can install, understand, trust, and
@@ -154,14 +154,14 @@ the privacy contract to make measurement easier.
   recognized as already covered.
 - The codebase has a strong test and correctness posture with no production
   dependencies today.
+- The public `chox-cli` package installs the `chox` command without a source clone,
+  carries an immediately runnable taskable starter, and passed a real isolated
+  install/run/interruption/resume journey.
+- Relays and findings are discoverable and inspectable through stable human and JSON
+  command surfaces before a user installs or runs them.
 
 ### 3.2 Not yet proven
 
-- A developer can install Chox without cloning and building the repository.
-- A new user can start a real task without editing a prompt template.
-- A published package contains an immediately runnable starter workflow.
-- Users can discover, inspect, manage, and understand installed relays without
-  remembering slugs or filesystem paths.
 - A generated relay is trusted before installation because its roles and prompts are
   visible at the decision point.
 - The review boundary can send work back through a fix/re-review cycle cleanly.
@@ -223,9 +223,9 @@ cohort targets only when the project has enough users to make percentages meanin
 
 | Order | Status | Milestone | Product outcome | Gate to continue |
 |---:|---|---|---|---|
-| 0 | In progress | Close Phase 1b follow-through and prepare 1c | Detection is accepted and release prerequisites are known | Demo, measurement, handle decision, and 1c packet are complete |
-| 1 | Next | Phase 1c — Taskable First Run | A clean install can start a real task without editing Chox files | Packaged clean-machine journey succeeds |
-| 2 | Gated | Phase 1c.1 — Private Alpha | Target developers complete the journey without coaching | Activation, completion, trust, and repeat-use gates pass |
+| 0 | In progress | Close Phase 1b follow-through | Detection is accepted and its evidence window is complete | Demo, concurrency record, and measurement close honestly |
+| 1 | Complete | Phase 1c — Taskable First Run | A clean install can start a real task without editing Chox files | Passed 2026-07-14; `chox-cli@0.1.0` published |
+| 2 | Next | Phase 1c.1 — Private Alpha | Target developers complete the journey without coaching | Activation, completion, trust, and repeat-use gates pass |
 | 3 | Gated | Phase 1d — Complete the Job | Review can lead to fix/re-review and a clear branch outcome | Repeated real tasks finish without terminal choreography |
 | 4 | Gated | Phase 2A — Personal Context and Relay Refinement | Repeated runs require less re-explanation and workflows improve safely | Users keep and reuse proposed context/refinements |
 | 5 | Gated | Phase 3 — Resident Posture | Useful discovery arrives without manual scans or spam | A quiet week produces useful notification value |
@@ -237,13 +237,13 @@ Phase numbers after 1b.1 refine the original sequence in `docs/SPEC.md`. Before 
 affected build packet is approved, add a dated spec amendment recording the split and
 new order. Do not erase the original phase history.
 
-## 7. Milestone 0 — Close Phase 1b Follow-through and Prepare Phase 1c
+## 7. Milestone 0 — Close Phase 1b Follow-through
 
 ### Objective
 
-Phase 1b.1 is accepted. Finish the remaining Phase 1b evidence and release decisions,
-then make Phase 1c decision-complete. Do not confuse closed hardening work with a
-finished acquisition/release milestone.
+Phase 1b.1 is accepted and Phase 1c has since shipped. Finish the remaining Phase 1b
+evidence without pretending that the later release automatically closed the earlier
+detection-quality, concurrency, and demo gates.
 
 ### Step-by-step
 
@@ -265,14 +265,15 @@ finished acquisition/release milestone.
       installed relay → current dry-run. Label it as a source-build demo; Phase 1c
       owns the clean-install, task-input demo.
 - [ ] Continue and close the two-week detection-quality measurement.
-- [ ] Verify the npm package name or choose the scoped fallback.
-- [ ] Record the package decision without publishing a knowingly incomplete first-run
+- [x] Verify the npm package name or choose the scoped fallback.
+- [x] Record the package decision without publishing a knowingly incomplete first-run
       experience.
-- [ ] Write and approve the Phase 1c build packet.
+- [x] Write and approve the Phase 1c build packet.
 
-The two-week measurement may run while Phase 1c is planned and implemented. Do not
-leave useful engineering idle, but do not mark the broader Phase 1b milestone
-complete until its evidence window is honestly closed.
+The two-week measurement continued while Phase 1c was planned, implemented, and
+published. Do not erase the remaining evidence obligation merely because useful
+engineering advanced; the broader Phase 1b milestone closes only when its window is
+honestly recorded.
 
 ### Exit gate
 
@@ -302,7 +303,7 @@ relays live.
 ### Target journey
 
 ```sh
-npm install -g <resolved-package-name>
+npm install -g chox-cli
 cd <an-existing-git-repository>
 chox doctor
 chox relay list
@@ -311,7 +312,8 @@ chox run spec-implement-review --task-file task.md --dry-run
 chox run spec-implement-review --task-file task.md
 ```
 
-The precise package name remains founder-controlled. The CLI journey does not.
+The npm package is `chox-cli`; `bin.chox` keeps the installed command and product
+name `chox`.
 
 ### Step 1 — Define the task input contract
 
@@ -440,6 +442,10 @@ A clean-machine rehearsal must demonstrate:
 8. no relay-source edits.
 
 The milestone is not complete until the packed artifact passes this journey.
+
+**Status: ACCEPTED (2026-07-14).** The founder passed the live clean-machine journey
+and published `chox-cli@0.1.0`. The independent post-publish artifact/consumer audit
+is recorded in `docs/plans/result-0.1.0-publish-audit.md`.
 
 ### Out of scope
 
@@ -995,16 +1001,15 @@ are true:
 
 This is the concrete order from the current repository state:
 
-1. Confirm the detection-quality window end date and Phase 1b demo plan.
-2. Verify the npm handle or choose the scoped package fallback.
-3. Write `docs/plans/phase-1c-build-packet.md` from Milestone 1.
-4. Implement `--task`, `--task-file`, and `{{task}}` with dry-run/resume parity.
-5. Package the read-only starter relay and test the actual tarball in isolation.
-6. Add relay and finding discovery/inspection surfaces.
-7. Replace the source-only quickstart with the external activation journey.
-8. Publish the first honest alpha only after the packed journey passes.
-9. Run the five-person private alpha and stop expansion if repeat use does not
-    appear.
+1. Decide whether the immutable 0.1.0 artifact findings warrant a
+   maintainer-approved patch release; never attempt to republish or move 0.1.0.
+2. Confirm the detection-quality window end date and Phase 1b demo/concurrency plan.
+3. Recruit the five private-alpha developers from the beachhead profile.
+4. Observe the installed journey without intervening and record activation, trust,
+   completion, and gate-friction evidence.
+5. Fix P0/P1 alpha findings before expanding scope, then rerun at least one participant
+   through the revised flow.
+6. Measure seven-day return use and make the go/iterate/stop decision for Phase 1d.
 
 The next product decision after those actions comes from observed retention, not from
 the remaining length of the original feature list.
@@ -1017,7 +1022,7 @@ These remain fixed until a dated, evidence-backed amendment:
 |---|---|
 | Product wedge | Taskable, gated relays |
 | Differentiator | Cross-source history → personal workflow → isolated execution |
-| Next build | Phase 1c — Taskable First Run |
+| Next build | Phase 1c.1 — Private Alpha and UX Hardening |
 | Primary surface | CLI and native agent sessions |
 | First external segment | Experienced macOS/Linux developers using Claude Code + Codex |
 | Default trust posture | Local, gated, isolated, inspectable |
@@ -1035,3 +1040,5 @@ Append entries; do not rewrite older ones.
 |---|---|---|
 | 2026-07-14 | Created the active post-1b.1 roadmap; inserted taskable first run, private alpha, and flagship depth before broader lenses/daemon/app work | Phase 1a proved the runtime, Phase 1b.1 exposed semantic detection risk, and the product still lacked an installable task-to-reviewed-branch journey |
 | 2026-07-14 | Marked Phase 1b.1 accepted and closed; kept the broader Phase 1b demo, measurement, and package preparation open | Founder reran live detection and reported that the hardened covered-loop result returned as expected without a rival draft or semantic repair |
+| 2026-07-14 | Marked Phase 1c accepted and moved private alpha to next; recorded the public package as `chox-cli@0.1.0` with command `chox` | Founder passed the live clean-machine rehearsal and the package was published after npm rejected the unclaimed `chox` handle under its similarity policy |
+| 2026-07-14 | Added the post-publish integrity gate and patch-release decision | The live package passed the installed journey, while the audit found stale build output, mismatched npm `gitHead`, stale lock/test identity, and a rename-broken pack verifier |

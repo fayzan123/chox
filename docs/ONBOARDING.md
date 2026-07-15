@@ -265,21 +265,19 @@ is only the readable current snapshot; do not duplicate the full roadmap here.
 - **Phase 1b follow-through remains open.** Chox now indexes Claude Code and Codex
   sessions, detects and confirms handoff patterns, drafts and installs relays, and
   recognizes installed coverage. Remaining work is the concurrent-session check when
-  live evidence exists, demo recording, two-week quality window, and package-name
-  decision.
-- **Current build: Phase 1c — Taskable First Run.** `--task`/`--task-file`, a
-  `{{task}}` placeholder, a packaged starter relay, relay/finding inspection, and a
-  clean external install journey make the runtime usable without hand-editing prompt
-  files. Mechanical acceptance is `npm run verify:pack`; the clean-machine live
-  rehearsal and publish decision remain founder-run gates.
-- **Then: private alpha and flagship depth.** External activation and repeat-use
-  evidence gate review→fix, shared context, daemon, new lenses, and app work. Chox
-  does not expand into those surfaces merely because they appeared in the original
-  phase list.
+  live evidence exists, demo recording, and the two-week quality window.
+- **Phase 1c is ACCEPTED and published.** The founder passed the clean-machine live
+  rehearsal, and `chox-cli@0.1.0` is public on npm. The package installs the `chox`
+  command and includes the taskable, read-only `spec-implement-review` starter.
+- **Current product step: private alpha and UX hardening.** External activation and
+  repeat-use evidence gate review→fix, shared context, daemon, new lenses, and app
+  work. Chox does not expand into those surfaces merely because they appeared in the
+  original phase list.
 
 ## 10. Getting started
 
-The installed package is the product path.
+The installed package is the product path. The npm package is `chox-cli`; the
+installed command remains `chox`.
 
 ```sh
 npm install -g chox-cli
